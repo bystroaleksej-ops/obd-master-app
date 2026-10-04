@@ -23,7 +23,6 @@ class BluetoothSppTransport(
     override val isConnected: Boolean
         get() = socket?.isConnected == true
 
-    @SuppressLint("MissingPermission")
     override val transportName: String
         get() = try {
             "${device.name ?: "OBDII"} (${device.address})"
