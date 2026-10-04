@@ -30,6 +30,8 @@ sealed class ConnectionStatus {
     data class Error(val message: String) : ConnectionStatus() {
         val error: String get() = message
     }
+}
+
 sealed class AutoTestUiState {
     data object Idle : AutoTestUiState()
     data class Running(val step: String, val progress: Float) : AutoTestUiState()
