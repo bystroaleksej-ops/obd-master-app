@@ -30,6 +30,10 @@ sealed class ConnectionStatus {
     data class Error(val message: String) : ConnectionStatus() {
         val error: String get() = message
     }
+sealed class AutoTestUiState {
+    data object Idle : AutoTestUiState()
+    data class Running(val step: String, val progress: Float) : AutoTestUiState()
+    data class Completed(val report: com.obdmaster.app.core.protocol.AutoTestReport) : AutoTestUiState()
 }
 
 enum class ConnectionType {
@@ -41,6 +45,9 @@ class ObdViewModel : ViewModel() {
 
     private val _connectionStatus = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Disconnected)
     val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
+
+    private val _autoTestState = MutableStateFlow<AutoTestUiState>(AutoTestUiState.Idle)
+    val autoTestState: StateFlow<AutoTestUiState> = _autoTestState.asStateFlow()
 
     private val _connectionType = MutableStateFlow(ConnectionType.BLUETOOTH)
     val connectionType: StateFlow<ConnectionType> = _connectionType.asStateFlow()
@@ -79,7 +86,7 @@ class ObdViewModel : ViewModel() {
     fun togglePidSelection(pidHex: String) {
         val current = _appSettings.value.selectedPidHexes.toMutableSet()
         if (current.contains(pidHex)) {
-            if (current.size > 1) { // минимум 1 датчик должен оставаться активным
+            if (current.size > 1) { // keep at least 1 sensor active
                 current.remove(pidHex)
             }
         } else {
@@ -199,7 +206,8 @@ class ObdViewModel : ViewModel() {
                 val selectedHexes = _appSettings.value.selectedPidHexes
                 val currentChartHex = _chartPid.value.pidHex
 
-                // Опрашиваем только выбранные датчики (и текущий датчик с графика)
+                // Only poll sensors selected by the user (and supported)
+                // Plus the active chart sensor if viewing the Charts screen
                 val cyclePids = allPids.filter { 
                     it.isSupported && (it.pidHex in selectedHexes || it.pidHex == currentChartHex) 
                 }
@@ -209,7 +217,7 @@ class ObdViewModel : ViewModel() {
                     continue
                 }
 
-                // Запрос датчиков и мгновенная отправка данных на экран без лагов
+                // Query only the selected PIDs and update UI IMMEDIATELY on each packet!
                 for (pid in cyclePids) {
                     if (!isActive) break
                     val rawResp = proto.sendCommand("01 ${pid.pidHex}")
@@ -221,7 +229,7 @@ class ObdViewModel : ViewModel() {
                             currentList.add(pid.currentValue)
                             _chartHistory.value = currentList
                         }
-                        // Моментальное обновление UI на каждый пришедший пакет
+                        // Emit new list instance immediately on every packet so UI reacts with zero lag!
                         _pids.value = ArrayList(allPids)
                     }
                 }
@@ -236,7 +244,7 @@ class ObdViewModel : ViewModel() {
         viewModelScope.launch {
             val service = dtcService ?: return@launch
             _isDtcScanning.value = true
-            appendTerminal("Запуск сканирования кодов ошибок...")
+            appendTerminal("Запуск сканирования кодов ошибок DTC...")
 
             try {
                 val stored = service.readStoredDtcs()
@@ -245,7 +253,7 @@ class ObdViewModel : ViewModel() {
 
                 val all = (stored + pending + permanent).distinctBy { it.code }
                 _dtcList.value = all
-                appendTerminal("Найдено ошибок: ${all.size}")
+                appendTerminal("Сканирование завершено: найдено ошибок: ${all.size}")
             } catch (e: Exception) {
                 appendTerminal("Ошибка сканирования DTC: ${e.localizedMessage}")
             } finally {
@@ -257,11 +265,11 @@ class ObdViewModel : ViewModel() {
     fun clearDtcs(onCompleted: (Boolean) -> Unit) {
         viewModelScope.launch {
             val service = dtcService ?: return@launch
-            appendTerminal("Сброс кодов ошибок (Mode 04)...")
+            appendTerminal("Отправка команды сброса кодов ошибок (Mode 04)...")
             val success = service.clearDtcs()
             if (success) {
                 _dtcList.value = emptyList()
-                appendTerminal("Ошибки успешно сброшены!")
+                appendTerminal("Команды сброса выполнены успешно!")
             } else {
                 appendTerminal("Не удалось сбросить ошибки.")
             }
@@ -275,9 +283,9 @@ class ObdViewModel : ViewModel() {
             try {
                 val info = service.readVehicleInfo()
                 _vehicleInfo.value = info
-                appendTerminal("Автомобиль: VIN=${info.vin}")
+                appendTerminal("Данные авто загружены: VIN=${info.vin}")
             } catch (e: Exception) {
-                appendTerminal("Не удалось получить VIN: ${e.localizedMessage}")
+                appendTerminal("Не удалось прочитать VIN: ${e.localizedMessage}")
             }
         }
     }
@@ -286,12 +294,12 @@ class ObdViewModel : ViewModel() {
         viewModelScope.launch {
             val proto = protocol
             if (proto == null || activeTransport?.isConnected != true) {
-                appendTerminal("ERR: Нет подключения к адаптеру!")
+                appendTerminal("ERR: Нет активного подключения к адаптеру!")
                 return@launch
             }
             appendTerminal("> $cmd")
             val resp = proto.sendCommand(cmd)
-            appendTerminal(resp.ifBlank { "OK (пустой ответ)" })
+            appendTerminal(resp)
         }
     }
 
@@ -300,6 +308,38 @@ class ObdViewModel : ViewModel() {
         if (list.size > 200) list.removeAt(0)
         list.add(msg)
         _terminalLogs.value = list
+    fun runAutoTest() {
+        viewModelScope.launch {
+            val proto = protocol
+            if (proto == null || activeTransport?.isConnected != true) {
+                appendTerminal("Автотест: сначала подключитесь к адаптеру!")
+                return@launch
+            }
+            pollingJob?.cancel()
+            _autoTestState.value = AutoTestUiState.Running("Запуск экспресс-автотеста...", 0f)
+            try {
+                val report = proto.runAutoTest(_pids.value) { step, prog ->
+                    _autoTestState.value = AutoTestUiState.Running(step, prog)
+                }
+                _autoTestState.value = AutoTestUiState.Completed(report)
+                appendTerminal("Автотест: найдено ${report.supportedPidCount}/${report.totalTestedCount} датчиков, пинг: ${report.pingMs} мс")
+            } catch (e: Exception) {
+                appendTerminal("Ошибка автотеста: ${e.localizedMessage}")
+                _autoTestState.value = AutoTestUiState.Idle
+            } finally {
+                startPolling()
+            }
+        }
+    }
+
+    fun applyOptimalSensors(report: com.obdmaster.app.core.protocol.AutoTestReport) {
+        setPidSelectionPreset(report.optimalPidHexes)
+        _autoTestState.value = AutoTestUiState.Idle
+        appendTerminal("Применены оптимальные датчики (${report.optimalPidHexes.size} шт.)")
+    }
+
+    fun dismissAutoTest() {
+        _autoTestState.value = AutoTestUiState.Idle
     }
 
     override fun onCleared() {
