@@ -9,8 +9,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.ui.draw.rotate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -212,9 +212,10 @@ fun TerminalScreen(viewModel: ObdViewModel) {
                     trailingIcon = {
                         IconButton(onClick = { isDropdownExpanded = !isDropdownExpanded }) {
                             Icon(
-                                imageVector = if (isDropdownExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                                imageVector = Icons.Default.ArrowDropDown,
                                 contentDescription = "Выбрать команду",
-                                tint = CyanAccent
+                                tint = CyanAccent,
+                                modifier = Modifier.rotate(if (isDropdownExpanded) 180f else 0f)
                             )
                         }
                     },
