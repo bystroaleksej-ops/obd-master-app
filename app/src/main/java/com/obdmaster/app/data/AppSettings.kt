@@ -27,7 +27,10 @@ data class AppSettings(
 
     // 4. Diagnostics & Terminal
     val deepScanAllModules: Boolean = false, // false: ECU only, true: ECU + TCM + ABS
-    val terminalAutoTranslate: Boolean = true
+    val terminalAutoTranslate: Boolean = true,
+
+    // 5. Active Sensors (PIDs) for High-Rate Polling
+    val selectedPidHexes: Set<String> = setOf("0C", "0D", "05", "04", "11", "42")
 )
 
 class SettingsManager(context: Context) {
@@ -51,7 +54,8 @@ class SettingsManager(context: Context) {
             tempUnit = prefs.getString("tempUnit", "°C") ?: "°C",
             pressureUnit = prefs.getString("pressureUnit", "кПа") ?: "кПа",
             deepScanAllModules = prefs.getBoolean("deepScanAllModules", false),
-            terminalAutoTranslate = prefs.getBoolean("terminalAutoTranslate", true)
+            terminalAutoTranslate = prefs.getBoolean("terminalAutoTranslate", true),
+            selectedPidHexes = prefs.getStringSet("selectedPidHexes", setOf("0C", "0D", "05", "04", "11", "42")) ?: setOf("0C", "0D", "05", "04", "11", "42")
         )
     }
 
@@ -74,6 +78,7 @@ class SettingsManager(context: Context) {
             putString("pressureUnit", settings.pressureUnit)
             putBoolean("deepScanAllModules", settings.deepScanAllModules)
             putBoolean("terminalAutoTranslate", settings.terminalAutoTranslate)
+            putStringSet("selectedPidHexes", settings.selectedPidHexes)
             apply()
         }
     }
