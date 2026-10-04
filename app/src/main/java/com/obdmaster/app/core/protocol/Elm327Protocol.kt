@@ -31,7 +31,8 @@ class Elm327Protocol(
         sendCommand("AT L0") // Linefeed off
         sendCommand("AT S0") // Spaces off
         sendCommand("AT H0") // Headers off
-        sendCommand("AT AT 1") // Adaptive timing auto 1
+        sendCommand("AT AT 2") // Aggressive adaptive timing auto 2 (much faster response)
+        sendCommand("AT ST 32") // Set timeout to ~200ms (avoids 1-2s freezes on missing PIDs)
         sendCommand("AT SP 0") // Automatic protocol
 
         val voltResp = sendCommand("AT RV")
@@ -58,21 +59,28 @@ class Elm327Protocol(
             out.flush()
 
             val sb = java.lang.StringBuilder()
-            var b: Int
+            val buffer = ByteArray(256)
             val startTime = System.currentTimeMillis()
-            val timeout = 4000L
+            val timeout = 2500L
 
             while (System.currentTimeMillis() - startTime < timeout) {
-                if (input.available() > 0) {
-                    b = input.read()
-                    if (b == -1) break
-                    val c = b.toChar()
-                    if (c == '>') {
-                        break // End of ELM327 response
+                val available = input.available()
+                if (available > 0) {
+                    val readLen = input.read(buffer, 0, minOf(available, buffer.size))
+                    if (readLen > 0) {
+                        var promptFound = false
+                        for (i in 0 until readLen) {
+                            val c = buffer[i].toInt().toChar()
+                            if (c == '>') {
+                                promptFound = true
+                                break
+                            }
+                            sb.append(c)
+                        }
+                        if (promptFound) break
                     }
-                    sb.append(c)
                 } else {
-                    delay(10)
+                    delay(2) // Short non-blocking yield
                 }
             }
 
@@ -88,4 +96,71 @@ class Elm327Protocol(
             .replace("BUS INIT...", "")
             .trim()
     }
+
+    suspend fun runAutoTest(
+        allPids: List<ObdPid>,
+        onProgress: (step: String, progress: Float) -> Unit
+    ): AutoTestReport = withContext(Dispatchers.IO) {
+        onProgress("Опрос версии чипа адаптера...", 0.1f)
+        val atiResp = sendCommand("ATI").trim()
+        val isV15 = atiResp.contains("1.5", ignoreCase = true)
+        val chipName = if (isV15) "ELM327 v1.5 (Оригинал PIC18F25K80)" else "ELM327 ($atiResp)"
+
+        onProgress("Замер скорости отклика адаптера...", 0.25f)
+        val t0 = System.currentTimeMillis()
+        sendCommand("AT RV")
+        val ping = (System.currentTimeMillis() - t0).coerceAtLeast(1L)
+
+        onProgress("Проверка бортового напряжения АКБ...", 0.4f)
+        val volt = sendCommand("AT RV").trim().ifBlank { batteryVoltage }
+
+        onProgress("Определение протокола связи...", 0.55f)
+        val proto = sendCommand("AT DP").trim().ifBlank { detectedProtocol }
+
+        onProgress("Тестирование датчиков автомобиля...", 0.7f)
+        val supportedHexes = mutableSetOf<String>()
+        var tested = 0
+        for (pid in allPids) {
+            val stepProg = 0.7f + (0.28f * (tested.toFloat() / allPids.size.toFloat()))
+            onProgress("Тест датчика: ${pid.titleRu} (${pid.pidHex})...", stepProg)
+            val resp = sendCommand("01 ${pid.pidHex}")
+            if (pid.decode(resp)) {
+                supportedHexes.add(pid.pidHex)
+            }
+            tested++
+            delay(15)
+        }
+
+        onProgress("Формирование отчета автотеста...", 1.0f)
+        val rec = when {
+            ping < 60 -> "Скорость отличная! Подходит для Real-Time приборки до 25 FPS."
+            ping < 120 -> "Скорость нормальная. Рекомендуется пресет «Спорт (4)» или «База (6)»."
+            else -> "Высокая задержка адаптера ($ping мс). Включите только 2-3 критичных датчика."
+        }
+
+        AutoTestReport(
+            chipVersion = chipName,
+            isOriginalChip = isV15,
+            pingMs = ping,
+            batteryVoltage = volt,
+            protocolName = proto,
+            supportedPidCount = supportedHexes.size,
+            totalTestedCount = allPids.size,
+            optimalPidHexes = if (supportedHexes.isNotEmpty()) supportedHexes else setOf("0C", "0D"),
+            recommendation = rec
+        )
+    }
 }
+
+data class AutoTestReport(
+    val chipVersion: String,
+    val isOriginalChip: Boolean,
+    val pingMs: Long,
+    val batteryVoltage: String,
+    val protocolName: String,
+    val supportedPidCount: Int,
+    val totalTestedCount: Int,
+    val optimalPidHexes: Set<String>,
+    val recommendation: String
+)
+
