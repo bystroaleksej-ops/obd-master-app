@@ -1,15 +1,16 @@
 package com.obdmaster.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +27,18 @@ import com.obdmaster.app.ui.viewmodel.ObdViewModel
 fun DashboardScreen(viewModel: ObdViewModel) {
     val pids by viewModel.pids.collectAsState()
     val status by viewModel.connectionStatus.collectAsState()
+    val settings by viewModel.appSettings.collectAsState()
+    var showSensorDialog by remember { mutableStateOf(false) }
+
+    if (showSensorDialog) {
+        SensorSelectionDialog(
+            allPids = pids,
+            selectedHexes = settings.selectedPidHexes,
+            onTogglePid = { hex -> viewModel.togglePidSelection(hex) },
+            onSetPreset = { preset -> viewModel.setPidSelectionPreset(preset) },
+            onDismiss = { showSensorDialog = false }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -64,30 +77,225 @@ fun DashboardScreen(viewModel: ObdViewModel) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text(
-            text = "ПАРАМЕТРЫ ДАТЧИКОВ",
-            color = TextSecondary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "ПАРАМЕТРЫ ДАТЧИКОВ",
+                color = TextSecondary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+
+            Button(
+                onClick = { showSensorDialog = true },
+                colors = ButtonDefaults.buttonColors(containerColor = DarkSurface),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.height(30.dp)
+            ) {
+                Text(
+                    text = "⚙️ Датчики (${settings.selectedPidHexes.size}/${pids.size})",
+                    fontSize = 11.sp,
+                    color = CyanAccent,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Grid of remaining PIDs
-        val remainingPids = pids.filter { it !is ObdPid.EngineRpm && it !is ObdPid.VehicleSpeed }
+        // Grid of remaining PIDs (filtered by user selection)
+        val remainingPids = pids.filter {
+            it.pidHex in settings.selectedPidHexes && it !is ObdPid.EngineRpm && it !is ObdPid.VehicleSpeed
+        }
 
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            items(remainingPids) { pid ->
-                PidCard(pid = pid)
+        if (remainingPids.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Нет выбранных дополнительных датчиков.\nНажмите «⚙️ Датчики» выше для выбора.",
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(remainingPids) { pid ->
+                    PidCard(pid = pid)
+                }
             }
         }
     }
+}
+
+@Composable
+fun SensorSelectionDialog(
+    allPids: List<ObdPid>,
+    selectedHexes: Set<String>,
+    onTogglePid: (String) -> Unit,
+    onSetPreset: (Set<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(
+                    text = "ВЫБОР ДАТЧИКОВ",
+                    color = CyanAccent,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Чем меньше датчиков — тем быстрее обновление онлайн!",
+                    color = TextSecondary,
+                    fontSize = 11.sp
+                )
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Быстрые пресеты:",
+                    fontSize = 12.sp,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val sportHexes = setOf("0C", "0D", "04", "11") // RPM, Speed, Load, Throttle
+                val standardHexes = setOf("0C", "0D", "05", "04", "11", "42") // + Coolant, Voltage
+                val allHexes = allPids.map { it.pidHex }.toSet()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Button(
+                        onClick = { onSetPreset(sportHexes) },
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedHexes == sportHexes) CyanAccent else DarkBackground
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "⚡ Спорт (4)",
+                            fontSize = 10.sp,
+                            color = if (selectedHexes == sportHexes) DarkBackground else TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Button(
+                        onClick = { onSetPreset(standardHexes) },
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedHexes == standardHexes) CyanAccent else DarkBackground
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "🚗 База (6)",
+                            fontSize = 10.sp,
+                            color = if (selectedHexes == standardHexes) DarkBackground else TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Button(
+                        onClick = { onSetPreset(allHexes) },
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedHexes == allHexes) CyanAccent else DarkBackground
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "🌐 Все (${allPids.size})",
+                            fontSize = 10.sp,
+                            color = if (selectedHexes == allHexes) DarkBackground else TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(color = DarkBorder, thickness = 0.5.dp)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(allPids) { pid ->
+                        val isChecked = pid.pidHex in selectedHexes
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isChecked) DarkBackground else DarkCard)
+                                .clickable { onTogglePid(pid.pidHex) }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = pid.titleRu,
+                                    color = if (isChecked) TextPrimary else TextMuted,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isChecked) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                                Text(
+                                    text = "[PID ${pid.pidHex}] • ${pid.category}",
+                                    color = if (isChecked) CyanAccent else TextSecondary,
+                                    fontSize = 10.sp
+                                )
+                            }
+                            Switch(
+                                checked = isChecked,
+                                onCheckedChange = { onTogglePid(pid.pidHex) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = CyanAccent,
+                                    checkedTrackColor = CyanAccent.copy(alpha = 0.5f)
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(text = "ГОТОВО", color = DarkBackground, fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = DarkSurface,
+        shape = RoundedCornerShape(16.dp)
+    )
 }
 
 @Composable
@@ -113,9 +321,9 @@ fun StatusHeader(status: ConnectionStatus) {
                 )
                 val statusText = when (status) {
                     is ConnectionStatus.Connected -> "АКТИВНО: ${status.protocol}"
-                    is ConnectionStatus.Connecting -> status.message
+                    is ConnectionStatus.Connecting -> "Подключение..."
                     is ConnectionStatus.Disconnected -> "Отключено"
-                    is ConnectionStatus.Error -> "Ошибка: ${status.error}"
+                    is ConnectionStatus.Error -> "Ошибка: ${status.message}"
                 }
                 val statusColor = when (status) {
                     is ConnectionStatus.Connected -> GreenAccent
