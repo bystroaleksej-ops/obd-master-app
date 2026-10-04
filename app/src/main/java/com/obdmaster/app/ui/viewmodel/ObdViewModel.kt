@@ -1,8 +1,7 @@
 package com.obdmaster.app.ui.viewmodel
 
-import android.app.Application
 import android.bluetooth.BluetoothDevice
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.obdmaster.app.core.protocol.DtcItem
 import com.obdmaster.app.core.protocol.DtcService
@@ -13,8 +12,6 @@ import com.obdmaster.app.core.protocol.VehicleInfoService
 import com.obdmaster.app.core.transport.BluetoothSppTransport
 import com.obdmaster.app.core.transport.ObdTransport
 import com.obdmaster.app.core.transport.WifiTcpTransport
-import com.obdmaster.app.data.AppSettings
-import com.obdmaster.app.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -37,16 +34,7 @@ enum class ConnectionType {
     WIFI
 }
 
-class ObdViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val settingsRepo = SettingsRepository(application)
-    private val _appSettings = MutableStateFlow(settingsRepo.loadSettings())
-    val appSettings: StateFlow<AppSettings> = _appSettings.asStateFlow()
-
-    fun updateSettings(newSettings: AppSettings) {
-        _appSettings.value = newSettings
-        settingsRepo.saveSettings(newSettings)
-    }
+class ObdViewModel : ViewModel() {
 
     private val _connectionStatus = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Disconnected)
     val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
@@ -69,7 +57,10 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private val _isDtcScanning = MutableStateFlow(false)
     val isDtcScanning: StateFlow<Boolean> = _isDtcScanning.asStateFlow()
 
-    private val _terminalLogs = MutableStateFlow<List<String>>(listOf("OBD-Master v1.2.0 инициализирован."))
+    private val _vehicleInfo = MutableStateFlow(VehicleInfo())
+    val vehicleInfo: StateFlow<VehicleInfo> = _vehicleInfo.asStateFlow()
+
+    private val _terminalLogs = MutableStateFlow<List<String>>(listOf("Терминал готов к отправке команд."))
     val terminalLogs: StateFlow<List<String>> = _terminalLogs.asStateFlow()
 
     private val _pairedDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
@@ -78,8 +69,28 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedDevice = MutableStateFlow<BluetoothDevice?>(null)
     val selectedDevice: StateFlow<BluetoothDevice?> = _selectedDevice.asStateFlow()
 
-    private val _vehicleInfo = MutableStateFlow(VehicleInfo())
-    val vehicleInfo: StateFlow<VehicleInfo> = _vehicleInfo.asStateFlow()
+    private val _appSettings = MutableStateFlow(com.obdmaster.app.data.AppSettings())
+    val appSettings: StateFlow<com.obdmaster.app.data.AppSettings> = _appSettings.asStateFlow()
+
+    fun updateSettings(newSettings: com.obdmaster.app.data.AppSettings) {
+        _appSettings.value = newSettings
+    }
+
+    fun togglePidSelection(pidHex: String) {
+        val current = _appSettings.value.selectedPidHexes.toMutableSet()
+        if (current.contains(pidHex)) {
+            if (current.size > 1) { // минимум 1 датчик должен оставаться включенным
+                current.remove(pidHex)
+            }
+        } else {
+            current.add(pidHex)
+        }
+        updateSettings(_appSettings.value.copy(selectedPidHexes = current))
+    }
+
+    fun setPidSelectionPreset(presetHexes: Set<String>) {
+        updateSettings(_appSettings.value.copy(selectedPidHexes = presetHexes))
+    }
 
     private var activeTransport: ObdTransport? = null
     private var protocol: Elm327Protocol? = null
@@ -190,49 +201,35 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private fun startPolling() {
         pollingJob?.cancel()
         pollingJob = viewModelScope.launch(Dispatchers.IO) {
-            // Real-time critical dashboard PIDs:
-            // 0C = RPM, 0D = Speed, 04 = Engine Load, 11 = Throttle
-            val fastPidHexes = setOf("0C", "0D", "04", "11")
-            var slowPidIndex = 0
-
             while (isActive && activeTransport?.isConnected == true) {
                 val proto = protocol ?: break
                 val allPids = _pids.value
-
-                // Filter supported PIDs (auto-excludes unsupported ones that cause timeouts)
-                val supportedPids = allPids.filter { it.isSupported }
+                val selectedHexes = _appSettings.value.selectedPidHexes
                 val currentChartHex = _chartPid.value.pidHex
 
-                val cyclePids = mutableListOf<ObdPid>()
-
-                // 1. Fast PIDs + chart PID (queried every cycle)
-                for (p in supportedPids) {
-                    if (p.pidHex in fastPidHexes || p.pidHex == currentChartHex) {
-                        cyclePids.add(p)
-                    }
+                // Опрашиваем ТОЛЬКО выбранные датчики (и датчик с графика)
+                val cyclePids = allPids.filter { 
+                    it.isSupported && (it.pidHex in selectedHexes || it.pidHex == currentChartHex) 
                 }
 
-                // 2. Round-robin: exactly 1 secondary PID per cycle (Coolant, Fuel, Voltage, Temps...)
-                val slowPids = supportedPids.filter { it.pidHex !in fastPidHexes && it.pidHex != currentChartHex }
-                if (slowPids.isNotEmpty()) {
-                    val slowPid = slowPids[slowPidIndex % slowPids.size]
-                    cyclePids.add(slowPid)
-                    slowPidIndex++
+                if (cyclePids.isEmpty()) {
+                    delay(200)
+                    continue
                 }
 
-                // 3. Query each PID and update UI IMMEDIATELY
+                // Запрос каждого выбранного датчика с МГНОВЕННЫМ выводом на экран
                 for (pid in cyclePids) {
                     if (!isActive) break
                     val rawResp = proto.sendCommand("01 ${pid.pidHex}")
                     val success = pid.decode(rawResp)
                     if (success) {
-                        if (pid.pidHex == _chartPid.value.pidHex) {
+                        if (pid.pidHex == currentChartHex) {
                             val currentList = _chartHistory.value.toMutableList()
                             if (currentList.size > 50) currentList.removeAt(0)
                             currentList.add(pid.currentValue)
                             _chartHistory.value = currentList
                         }
-                        // Emit new list instance immediately on every packet so UI reacts with zero lag!
+                        // Сразу обновляем экран после каждого принятого пакета
                         _pids.value = ArrayList(allPids)
                     }
                 }
