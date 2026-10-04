@@ -310,6 +310,8 @@ class ObdViewModel : ViewModel() {
         if (list.size > 200) list.removeAt(0)
         list.add(msg)
         _terminalLogs.value = list
+    }
+
     fun runAutoTest() {
         viewModelScope.launch {
             val proto = protocol
