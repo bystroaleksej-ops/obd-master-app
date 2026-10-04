@@ -8,6 +8,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.obdmaster.app.core.service.ObdConnectionService
 import com.obdmaster.app.ui.navigation.AppNavigation
 import com.obdmaster.app.ui.theme.ObdMasterTheme
