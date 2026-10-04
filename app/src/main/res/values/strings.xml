@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">OBD Master Pro</string>
+    <string name="channel_name">Служба связи с OBD-II</string>
+    <string name="channel_description">Поддерживает постоянную связь с адаптером ELM327</string>
+    <string name="notification_title">OBD Master активен</string>
+    <string name="notification_content">Идет опрос датчиков автомобиля в реальном времени</string>
+</resources>
