@@ -67,6 +67,13 @@ class ObdViewModel : ViewModel() {
     private val _pairedDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
     val pairedDevices: StateFlow<List<BluetoothDevice>> = _pairedDevices.asStateFlow()
 
+    private val _appSettings = MutableStateFlow(com.obdmaster.app.data.AppSettings())
+    val appSettings: StateFlow<com.obdmaster.app.data.AppSettings> = _appSettings.asStateFlow()
+
+    fun updateSettings(newSettings: com.obdmaster.app.data.AppSettings) {
+        _appSettings.value = newSettings
+    }
+
     private var activeTransport: ObdTransport? = null
     private var protocol: Elm327Protocol? = null
     private var dtcService: DtcService? = null
@@ -183,7 +190,7 @@ class ObdViewModel : ViewModel() {
                     delay(40) // Responsive polling interval
                 }
                 _pids.value = currentPids.toList() // Trigger state update
-                delay(100)
+                delay(_appSettings.value.pollingIntervalMs)
             }
         }
     }

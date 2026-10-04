@@ -25,6 +25,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     data object Charts : Screen("charts", "Графики", Icons.Default.ShowChart)
     data object Terminal : Screen("terminal", "Терминал", Icons.Default.Terminal)
     data object Connection : Screen("connection", "Связь", Icons.Default.Bluetooth)
+    data object Settings : Screen("settings", "Настройки", Icons.Default.Settings)
 }
 
 @Composable
@@ -35,7 +36,8 @@ fun AppNavigation(viewModel: ObdViewModel) {
         Screen.Diagnostics,
         Screen.Charts,
         Screen.Terminal,
-        Screen.Connection
+        Screen.Connection,
+        Screen.Settings
     )
 
     Scaffold(
@@ -51,7 +53,7 @@ fun AppNavigation(viewModel: ObdViewModel) {
                     val isSelected = currentRoute == screen.route
                     NavigationBarItem(
                         icon = { Icon(screen.icon, contentDescription = screen.title) },
-                        label = { Text(screen.title, fontSize = 11.sp) },
+                        label = { Text(screen.title, fontSize = 10.sp) },
                         selected = isSelected,
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = DarkBackground,
@@ -61,12 +63,14 @@ fun AppNavigation(viewModel: ObdViewModel) {
                             unselectedTextColor = TextSecondary
                         ),
                         onClick = {
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                            if (currentRoute != screen.route) {
+                                navController.navigate(screen.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
                             }
                         }
                     )
@@ -79,11 +83,24 @@ fun AppNavigation(viewModel: ObdViewModel) {
             startDestination = Screen.Dashboard.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.Dashboard.route) { DashboardScreen(viewModel) }
-            composable(Screen.Diagnostics.route) { DiagnosticsScreen(viewModel) }
-            composable(Screen.Charts.route) { LiveChartsScreen(viewModel) }
-            composable(Screen.Terminal.route) { TerminalScreen(viewModel) }
-            composable(Screen.Connection.route) { ConnectionScreen(viewModel) }
+            composable(Screen.Dashboard.route) {
+                DashboardScreen(viewModel = viewModel)
+            }
+            composable(Screen.Diagnostics.route) {
+                DiagnosticsScreen(viewModel = viewModel)
+            }
+            composable(Screen.Charts.route) {
+                LiveChartsScreen(viewModel = viewModel)
+            }
+            composable(Screen.Terminal.route) {
+                TerminalScreen(viewModel = viewModel)
+            }
+            composable(Screen.Connection.route) {
+                ConnectionScreen(viewModel = viewModel)
+            }
+            composable(Screen.Settings.route) {
+                SettingsScreen(viewModel = viewModel)
+            }
         }
     }
 }

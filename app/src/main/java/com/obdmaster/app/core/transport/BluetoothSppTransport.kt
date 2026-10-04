@@ -25,7 +25,8 @@ class BluetoothSppTransport(
 
     override val transportName: String
         get() = try {
-            "${device.name ?: "OBDII"} (${device.address})"
+            val name = device.name
+            if (name.isNullOrBlank()) device.address else "$name (${device.address})"
         } catch (e: Exception) {
             device.address
         }
