@@ -31,25 +31,25 @@ fun SettingsScreen(viewModel: ObdViewModel) {
     ) {
         item {
             Text(
-                text = "РќРђРЎРўР РћР™РљР РџР РР›РћР–Р•РќРРЇ",
+                text = "НАСТРОЙКИ ПРИЛОЖЕНИЯ",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = CyanAccent
             )
             Text(
-                text = "РџР°СЂР°РјРµС‚СЂС‹ СЃРІСЏР·Рё, Р±РµР·РѕРїР°СЃРЅРѕСЃС‚Рё, СЌРєСЂР°РЅР° Рё С‚РµСЂРјРёРЅР°Р»Р°",
+                text = "Параметры связи, безопасности, экрана и терминала",
                 fontSize = 12.sp,
                 color = TextSecondary
             )
         }
 
-        // ================= 1. РЎР’РЇР—Р¬ Р РђР”РђРџРўР•Р  =================
+        // ================= 1. СВЯЗЬ И АДАПТЕР =================
         item {
-            SettingsCategoryCard(title = "РЎР’РЇР—Р¬ Р РђР”РђРџРўР•Р  ELM327", icon = Icons.Default.Bluetooth) {
+            SettingsCategoryCard(title = "СВЯЗЬ И АДАПТЕР ELM327", icon = Icons.Default.Bluetooth) {
                 // Protocol selection
-                Text(text = "РџСЂРѕС‚РѕРєРѕР» РїРѕРґРєР»СЋС‡РµРЅРёСЏ OBD-II:", fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                Text(text = "Протокол подключения OBD-II:", fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(4.dp))
-                val protocols = listOf("РђРІС‚Рѕ (AT SP 0)", "CAN 11b 500k", "CAN 29b 500k", "KWP Fast", "ISO 9141-2")
+                val protocols = listOf("Авто (AT SP 0)", "CAN 11b 500k", "CAN 29b 500k", "KWP Fast", "ISO 9141-2")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -72,13 +72,13 @@ fun SettingsScreen(viewModel: ObdViewModel) {
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // Polling Rate
-                Text(text = "Р§Р°СЃС‚РѕС‚Р° РѕРїСЂРѕСЃР° РґР°С‚С‡РёРєРѕРІ:", fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                Text(text = "Частота опроса датчиков:", fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    listOf(50L to "Р‘С‹СЃС‚СЂР°СЏ (50 РјСЃ)", 100L to "РћР±С‹С‡РЅР°СЏ (100 РјСЃ)", 250L to "Р­РєРѕРЅРѕРј (250 РјСЃ)").forEach { (ms, label) ->
+                    listOf(50L to "Быстрая (50 мс)", 100L to "Обычная (100 мс)", 250L to "Эконом (250 мс)").forEach { (ms, label) ->
                         FilterChip(
                             selected = settings.pollingIntervalMs == ms,
                             onClick = { viewModel.updateSettings(settings.copy(pollingIntervalMs = ms)) },
@@ -97,21 +97,21 @@ fun SettingsScreen(viewModel: ObdViewModel) {
 
                 // Auto Reconnect Switch
                 SettingsSwitchRow(
-                    title = "РђРІС‚Рѕ-РїРµСЂРµРїРѕРґРєР»СЋС‡РµРЅРёРµ",
-                    subtitle = "РђРІС‚РѕРјР°С‚РёС‡РµСЃРєРё РІРѕСЃСЃС‚Р°РЅР°РІР»РёРІР°С‚СЊ СЃРІСЏР·СЊ РїСЂРё СЃР±РѕСЏС…",
+                    title = "Авто-переподключение",
+                    subtitle = "Автоматически восстанавливать связь при сбоях",
                     checked = settings.autoReconnect,
                     onCheckedChange = { viewModel.updateSettings(settings.copy(autoReconnect = it)) }
                 )
             }
         }
 
-        // ================= 2. РћРџРћР’Р•Р©Р•РќРРЇ Р Р—РђР©РРўРђ РњРћРўРћР Рђ =================
+        // ================= 2. ОПОВЕЩЕНИЯ И ЗАЩИТА МОТОРА =================
         item {
-            SettingsCategoryCard(title = "Р—РђР©РРўРђ Р РћРџРћР’Р•Р©Р•РќРРЇ", icon = Icons.Default.Warning) {
+            SettingsCategoryCard(title = "ЗАЩИТА И ОПОВЕЩЕНИЯ", icon = Icons.Default.Warning) {
                 // Coolant alarm
                 SettingsSwitchRow(
-                    title = "РўСЂРµРІРѕРіР° РїРѕ С‚РµРјРїРµСЂР°С‚СѓСЂРµ РћР–",
-                    subtitle = "РЎРёРіРЅР°Р» РїРµСЂРµРіСЂРµРІР° РїСЂРё ${settings.coolantAlarmThresholdC}В°C",
+                    title = "Тревога по температуре ОЖ",
+                    subtitle = "Сигнал перегрева при ${settings.coolantAlarmThresholdC}°C",
                     checked = settings.coolantAlarmEnabled,
                     onCheckedChange = { viewModel.updateSettings(settings.copy(coolantAlarmEnabled = it)) }
                 )
@@ -129,8 +129,8 @@ fun SettingsScreen(viewModel: ObdViewModel) {
 
                 // Battery alarm
                 SettingsSwitchRow(
-                    title = "РљРѕРЅС‚СЂРѕР»СЊ СЂР°Р·СЂСЏРґР° РђРљР‘",
-                    subtitle = "РџСЂРµРґСѓРїСЂРµР¶РґР°С‚СЊ РїСЂРё РїР°РґРµРЅРёРё РЅРёР¶Рµ ${"%.1f".format(settings.batteryAlarmThresholdV)} Р’",
+                    title = "Контроль разряда АКБ",
+                    subtitle = "Предупреждать при падении ниже ${"%.1f".format(settings.batteryAlarmThresholdV)} В",
                     checked = settings.batteryAlarmEnabled,
                     onCheckedChange = { viewModel.updateSettings(settings.copy(batteryAlarmEnabled = it)) }
                 )
@@ -148,8 +148,8 @@ fun SettingsScreen(viewModel: ObdViewModel) {
 
                 // Shift Light
                 SettingsSwitchRow(
-                    title = "РћРїРѕРІРµС‰РµРЅРёРµ РїРѕ РѕР±РѕСЂРѕС‚Р°Рј (Shift Light)",
-                    subtitle = "Р’СЃРїС‹С€РєР° РїР°РЅРµР»Рё РїСЂРё РґРѕСЃС‚РёР¶РµРЅРёРё ${settings.rpmAlarmThreshold} РѕР±/РјРёРЅ",
+                    title = "Оповещение по оборотам (Shift Light)",
+                    subtitle = "Вспышка панели при достижении ${settings.rpmAlarmThreshold} об/мин",
                     checked = settings.rpmAlarmEnabled,
                     onCheckedChange = { viewModel.updateSettings(settings.copy(rpmAlarmEnabled = it)) }
                 )
@@ -165,12 +165,12 @@ fun SettingsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        // ================= 3. Р­РљР РђРќ Р РРќРўР•Р Р¤Р•Р™РЎ =================
+        // ================= 3. ЭКРАН И ИНТЕРФЕЙС =================
         item {
-            SettingsCategoryCard(title = "Р­РљР РђРќ Р РРќРўР•Р Р¤Р•Р™РЎ", icon = Icons.Default.Settings) {
+            SettingsCategoryCard(title = "ЭКРАН И ИНТЕРФЕЙС", icon = Icons.Default.Settings) {
                 SettingsSwitchRow(
-                    title = "РќРµ РІС‹РєР»СЋС‡Р°С‚СЊ СЌРєСЂР°РЅ (Keep Screen On)",
-                    subtitle = "Р—Р°РїСЂРµС‚РёС‚СЊ С‚РµР»РµС„РѕРЅСѓ Р±Р»РѕРєРёСЂРѕРІР°С‚СЊСЃСЏ РІ СЂРµР¶РёРјРµ РїСЂРёР±РѕСЂРѕРІ",
+                    title = "Не выключать экран (Keep Screen On)",
+                    subtitle = "Запретить телефону блокироваться в режиме приборов",
                     checked = settings.keepScreenOn,
                     onCheckedChange = { viewModel.updateSettings(settings.copy(keepScreenOn = it)) }
                 )
@@ -178,8 +178,8 @@ fun SettingsScreen(viewModel: ObdViewModel) {
                 HorizontalDivider(color = DarkBorder, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 8.dp))
 
                 SettingsSwitchRow(
-                    title = "Р РµР¶РёРј РїСЂРѕРµРєС†РёРё HUD",
-                    subtitle = "Р—РµСЂРєР°Р»СЊРЅРѕРµ РѕС‚РѕР±СЂР°Р¶РµРЅРёРµ РґР»СЏ РѕС‚СЂР°Р¶РµРЅРёСЏ РѕС‚ Р»РѕР±РѕРІРѕРіРѕ СЃС‚РµРєР»Р° РЅРѕС‡СЊСЋ",
+                    title = "Режим проекции HUD",
+                    subtitle = "Зеркальное отображение для отражения от лобового стекла ночью",
                     checked = settings.hudMode,
                     onCheckedChange = { viewModel.updateSettings(settings.copy(hudMode = it)) }
                 )
@@ -192,12 +192,12 @@ fun SettingsScreen(viewModel: ObdViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "Р•РґРёРЅРёС†С‹ РёР·РјРµСЂРµРЅРёСЏ:", fontSize = 12.sp, color = TextPrimary)
+                    Text(text = "Единицы измерения:", fontSize = 12.sp, color = TextPrimary)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip(
-                            selected = settings.speedUnit == "РєРј/С‡",
-                            onClick = { viewModel.updateSettings(settings.copy(speedUnit = "РєРј/С‡")) },
-                            label = { Text("РєРј/С‡", fontSize = 10.sp) }
+                            selected = settings.speedUnit == "км/ч",
+                            onClick = { viewModel.updateSettings(settings.copy(speedUnit = "км/ч")) },
+                            label = { Text("км/ч", fontSize = 10.sp) }
                         )
                         FilterChip(
                             selected = settings.speedUnit == "mph",
@@ -209,12 +209,12 @@ fun SettingsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        // ================= 4. Р”РРђР“РќРћРЎРўРРљРђ Р РўР•Р РњРРќРђР› =================
+        // ================= 4. ДИАГНОСТИКА И ТЕРМИНАЛ =================
         item {
-            SettingsCategoryCard(title = "Р”РРђР“РќРћРЎРўРРљРђ Р РўР•Р РњРРќРђР›", icon = Icons.Default.Search) {
+            SettingsCategoryCard(title = "ДИАГНОСТИКА И ТЕРМИНАЛ", icon = Icons.Default.Search) {
                 SettingsSwitchRow(
-                    title = "Р“Р»СѓР±РѕРєРѕРµ СЃРєР°РЅРёСЂРѕРІР°РЅРёРµ РІСЃРµС… Р±Р»РѕРєРѕРІ",
-                    subtitle = "РћРїСЂР°С€РёРІР°С‚СЊ РЅРµ С‚РѕР»СЊРєРѕ Р”Р’РЎ (ECU), РЅРѕ Рё РђРљРџРџ (TCM)",
+                    title = "Глубокое сканирование всех блоков",
+                    subtitle = "Опрашивать не только ДВС (ECU), но и АКПП (TCM)",
                     checked = settings.deepScanAllModules,
                     onCheckedChange = { viewModel.updateSettings(settings.copy(deepScanAllModules = it)) }
                 )
@@ -222,8 +222,8 @@ fun SettingsScreen(viewModel: ObdViewModel) {
                 HorizontalDivider(color = DarkBorder, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 8.dp))
 
                 SettingsSwitchRow(
-                    title = "РђРІС‚РѕРїРµСЂРµРІРѕРґ РѕС‚РІРµС‚РѕРІ РІ С‚РµСЂРјРёРЅР°Р»Рµ",
-                    subtitle = "РџРѕРєР°Р·С‹РІР°С‚СЊ СЂР°СЃС€РёС„СЂРѕРІРєСѓ РїР°СЂР°РјРµС‚СЂРѕРІ РЅР° СЂСѓСЃСЃРєРѕРј СЏР·С‹РєРµ",
+                    title = "Автоперевод ответов в терминале",
+                    subtitle = "Показывать расшифровку параметров на русском языке",
                     checked = settings.terminalAutoTranslate,
                     onCheckedChange = { viewModel.updateSettings(settings.copy(terminalAutoTranslate = it)) }
                 )
