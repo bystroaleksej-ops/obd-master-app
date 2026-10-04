@@ -1,5 +1,7 @@
 package com.obdmaster.app.ui.viewmodel
 
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -20,13 +22,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 sealed class ConnectionStatus {
-    object Disconnected : ConnectionStatus()
-    object Connecting : ConnectionStatus()
+    data object Disconnected : ConnectionStatus()
+    data class Connecting(val message: String = "Подключение...") : ConnectionStatus()
     data class Connected(val adapterInfo: String, val protocol: String) : ConnectionStatus()
-    data class Error(val message: String) : ConnectionStatus()
+    data class Error(val message: String) : ConnectionStatus() {
+        val error: String get() = message
+    }
 }
 
 enum class ConnectionType {
@@ -66,9 +69,6 @@ class ObdViewModel : ViewModel() {
     private val _pairedDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
     val pairedDevices: StateFlow<List<BluetoothDevice>> = _pairedDevices.asStateFlow()
 
-    private val _selectedDevice = MutableStateFlow<BluetoothDevice?>(null)
-    val selectedDevice: StateFlow<BluetoothDevice?> = _selectedDevice.asStateFlow()
-
     private val _appSettings = MutableStateFlow(com.obdmaster.app.data.AppSettings())
     val appSettings: StateFlow<com.obdmaster.app.data.AppSettings> = _appSettings.asStateFlow()
 
@@ -79,7 +79,7 @@ class ObdViewModel : ViewModel() {
     fun togglePidSelection(pidHex: String) {
         val current = _appSettings.value.selectedPidHexes.toMutableSet()
         if (current.contains(pidHex)) {
-            if (current.size > 1) { // минимум 1 датчик должен оставаться включенным
+            if (current.size > 1) { // минимум 1 датчик должен оставаться активным
                 current.remove(pidHex)
             }
         } else {
@@ -106,69 +106,61 @@ class ObdViewModel : ViewModel() {
         _connectionType.value = type
     }
 
-    fun selectDevice(device: BluetoothDevice) {
-        _selectedDevice.value = device
-    }
-
-    fun selectChartPid(pid: ObdPid) {
+    fun setChartPid(pid: ObdPid) {
         _chartPid.value = pid
         _chartHistory.value = emptyList()
     }
 
+    fun selectChartPid(pid: ObdPid) = setChartPid(pid)
+
+    @SuppressLint("MissingPermission")
     fun refreshPairedDevices() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val bluetoothAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
-            try {
-                val devices = bluetoothAdapter?.bondedDevices?.toList() ?: emptyList()
-                _pairedDevices.value = devices
-                if (_selectedDevice.value == null && devices.isNotEmpty()) {
-                    val elm = devices.find { it.name?.contains("OBD", ignoreCase = true) == true || it.name?.contains("ELM", ignoreCase = true) == true }
-                    _selectedDevice.value = elm ?: devices.first()
-                }
-            } catch (e: SecurityException) {
-                _pairedDevices.value = emptyList()
+        try {
+            val adapter = BluetoothAdapter.getDefaultAdapter()
+            if (adapter != null && adapter.isEnabled) {
+                _pairedDevices.value = adapter.bondedDevices.toList()
             }
+        } catch (e: Exception) {
+            _pairedDevices.value = emptyList()
         }
     }
 
     fun connectBluetooth(device: BluetoothDevice) {
         viewModelScope.launch {
-            _connectionStatus.value = ConnectionStatus.Connecting
-            appendTerminal("Подключение к Bluetooth: ${device.name} (${device.address})...")
+            disconnect()
+            _connectionStatus.value = ConnectionStatus.Connecting("Подключение к ${device.name ?: device.address}...")
 
             val transport = BluetoothSppTransport(device)
-            val success = transport.connect()
+            activeTransport = transport
 
-            if (success) {
-                activeTransport = transport
-                setupProtocol(transport)
-            } else {
-                _connectionStatus.value = ConnectionStatus.Error("Не удалось подключиться к Bluetooth устройству")
-                appendTerminal("Ошибка подключения к Bluetooth.")
+            if (!transport.connect()) {
+                _connectionStatus.value = ConnectionStatus.Error("Не удалось открыть Bluetooth-сокет SPP")
+                return@launch
             }
+
+            initializeProtocol(transport)
         }
     }
 
-    fun connectWifi(ip: String = "192.168.0.10", port: Int = 35000) {
+    fun connectWifi(host: String, port: Int) {
         viewModelScope.launch {
-            _connectionStatus.value = ConnectionStatus.Connecting
-            appendTerminal("Подключение к Wi-Fi: $ip:$port...")
+            disconnect()
+            _connectionStatus.value = ConnectionStatus.Connecting("Подключение к $host:$port...")
 
-            val transport = WifiTcpTransport(ip, port)
-            val success = transport.connect()
+            val transport = WifiTcpTransport(host, port)
+            activeTransport = transport
 
-            if (success) {
-                activeTransport = transport
-                setupProtocol(transport)
-            } else {
-                _connectionStatus.value = ConnectionStatus.Error("Не удалось подключиться по Wi-Fi к $ip:$port")
-                appendTerminal("Ошибка Wi-Fi сокета.")
+            if (!transport.connect()) {
+                _connectionStatus.value = ConnectionStatus.Error("Не удалось подключиться к Wi-Fi адаптеру ($host:$port)")
+                return@launch
             }
+
+            initializeProtocol(transport)
         }
     }
 
-    private suspend fun setupProtocol(transport: ObdTransport) {
-        appendTerminal("Инициализация ELM327 протокола...")
+    private suspend fun initializeProtocol(transport: ObdTransport) {
+        _connectionStatus.value = ConnectionStatus.Connecting("Инициализация ELM327 и определение протокола...")
         val proto = Elm327Protocol(transport)
         protocol = proto
         dtcService = DtcService(proto)
@@ -207,7 +199,7 @@ class ObdViewModel : ViewModel() {
                 val selectedHexes = _appSettings.value.selectedPidHexes
                 val currentChartHex = _chartPid.value.pidHex
 
-                // Опрашиваем ТОЛЬКО выбранные датчики (и датчик с графика)
+                // Опрашиваем только выбранные датчики (и текущий датчик с графика)
                 val cyclePids = allPids.filter { 
                     it.isSupported && (it.pidHex in selectedHexes || it.pidHex == currentChartHex) 
                 }
@@ -217,7 +209,7 @@ class ObdViewModel : ViewModel() {
                     continue
                 }
 
-                // Запрос каждого выбранного датчика с МГНОВЕННЫМ выводом на экран
+                // Запрос датчиков и мгновенная отправка данных на экран без лагов
                 for (pid in cyclePids) {
                     if (!isActive) break
                     val rawResp = proto.sendCommand("01 ${pid.pidHex}")
@@ -229,7 +221,7 @@ class ObdViewModel : ViewModel() {
                             currentList.add(pid.currentValue)
                             _chartHistory.value = currentList
                         }
-                        // Сразу обновляем экран после каждого принятого пакета
+                        // Моментальное обновление UI на каждый пришедший пакет
                         _pids.value = ArrayList(allPids)
                     }
                 }
@@ -244,7 +236,7 @@ class ObdViewModel : ViewModel() {
         viewModelScope.launch {
             val service = dtcService ?: return@launch
             _isDtcScanning.value = true
-            appendTerminal("Запуск сканирования кодов ошибок DTC...")
+            appendTerminal("Запуск сканирования кодов ошибок...")
 
             try {
                 val stored = service.readStoredDtcs()
@@ -253,7 +245,7 @@ class ObdViewModel : ViewModel() {
 
                 val all = (stored + pending + permanent).distinctBy { it.code }
                 _dtcList.value = all
-                appendTerminal("Сканирование завершено: найдено ошибок: ${all.size}")
+                appendTerminal("Найдено ошибок: ${all.size}")
             } catch (e: Exception) {
                 appendTerminal("Ошибка сканирования DTC: ${e.localizedMessage}")
             } finally {
@@ -265,11 +257,11 @@ class ObdViewModel : ViewModel() {
     fun clearDtcs(onCompleted: (Boolean) -> Unit) {
         viewModelScope.launch {
             val service = dtcService ?: return@launch
-            appendTerminal("Отправка команды сброса кодов ошибок (Mode 04)...")
+            appendTerminal("Сброс кодов ошибок (Mode 04)...")
             val success = service.clearDtcs()
             if (success) {
                 _dtcList.value = emptyList()
-                appendTerminal("Команды сброса выполнены успешно!")
+                appendTerminal("Ошибки успешно сброшены!")
             } else {
                 appendTerminal("Не удалось сбросить ошибки.")
             }
@@ -283,9 +275,9 @@ class ObdViewModel : ViewModel() {
             try {
                 val info = service.readVehicleInfo()
                 _vehicleInfo.value = info
-                appendTerminal("Данные авто загружены: VIN=${info.vin}")
+                appendTerminal("Автомобиль: VIN=${info.vin}")
             } catch (e: Exception) {
-                appendTerminal("Не удалось прочитать VIN: ${e.localizedMessage}")
+                appendTerminal("Не удалось получить VIN: ${e.localizedMessage}")
             }
         }
     }
@@ -294,10 +286,9 @@ class ObdViewModel : ViewModel() {
         viewModelScope.launch {
             val proto = protocol
             if (proto == null || activeTransport?.isConnected != true) {
-                appendTerminal("Ошибка: нет подключения к адаптеру!")
+                appendTerminal("ERR: Нет подключения к адаптеру!")
                 return@launch
             }
-
             appendTerminal("> $cmd")
             val resp = proto.sendCommand(cmd)
             appendTerminal(resp.ifBlank { "OK (пустой ответ)" })
@@ -305,10 +296,10 @@ class ObdViewModel : ViewModel() {
     }
 
     private fun appendTerminal(msg: String) {
-        val current = _terminalLogs.value.toMutableList()
-        if (current.size > 200) current.removeAt(0)
-        current.add(msg)
-        _terminalLogs.value = current
+        val list = _terminalLogs.value.toMutableList()
+        if (list.size > 200) list.removeAt(0)
+        list.add(msg)
+        _terminalLogs.value = list
     }
 
     override fun onCleared() {
