@@ -18,8 +18,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.obdmaster.app.core.protocol.AutoTestReport
 import com.obdmaster.app.core.protocol.ObdPid
 import com.obdmaster.app.ui.theme.*
+import com.obdmaster.app.ui.viewmodel.AutoTestUiState
 import com.obdmaster.app.ui.viewmodel.ConnectionStatus
 import com.obdmaster.app.ui.viewmodel.ObdViewModel
 
@@ -28,6 +30,7 @@ fun DashboardScreen(viewModel: ObdViewModel) {
     val pids by viewModel.pids.collectAsState()
     val status by viewModel.connectionStatus.collectAsState()
     val settings by viewModel.appSettings.collectAsState()
+    val autoTestState by viewModel.autoTestState.collectAsState()
     var showSensorDialog by remember { mutableStateOf(false) }
 
     if (showSensorDialog) {
@@ -40,6 +43,12 @@ fun DashboardScreen(viewModel: ObdViewModel) {
         )
     }
 
+    AutoTestModal(
+        state = autoTestState,
+        onApplyOptimal = { report -> viewModel.applyOptimalSensors(report) },
+        onDismiss = { viewModel.dismissAutoTest() }
+    )
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -47,7 +56,10 @@ fun DashboardScreen(viewModel: ObdViewModel) {
             .padding(16.dp)
     ) {
         // Status header
-        StatusHeader(status)
+        StatusHeader(
+            status = status,
+            onRunAutoTest = { viewModel.runAutoTest() }
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -299,7 +311,10 @@ fun SensorSelectionDialog(
 }
 
 @Composable
-fun StatusHeader(status: ConnectionStatus) {
+fun StatusHeader(
+    status: ConnectionStatus,
+    onRunAutoTest: () -> Unit = {}
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = DarkSurface),
         shape = RoundedCornerShape(12.dp),
@@ -341,18 +356,38 @@ fun StatusHeader(status: ConnectionStatus) {
             }
 
             if (status is ConnectionStatus.Connected) {
-                Surface(
-                    color = DarkCard,
-                    shape = RoundedCornerShape(8.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "АКБ: ${status.adapterInfo}",
-                        color = CyanAccent,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                    Button(
+                        onClick = onRunAutoTest,
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Text(
+                            text = "⚡ Автотест",
+                            fontSize = 11.sp,
+                            color = DarkBackground,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Surface(
+                        color = DarkCard,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "АКБ: ${status.adapterInfo}",
+                            color = CyanAccent,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
         }
@@ -443,3 +478,127 @@ fun PidCard(pid: ObdPid) {
         }
     }
 }
+
+@Composable
+fun AutoTestModal(
+    state: AutoTestUiState,
+    onApplyOptimal: (AutoTestReport) -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (state is AutoTestUiState.Idle) return
+
+    AlertDialog(
+        onDismissRequest = {
+            if (state is AutoTestUiState.Completed) onDismiss()
+        },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "⚡ ЭКСПРЕСС-АВТОТЕСТ",
+                    color = CyanAccent,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                when (state) {
+                    is AutoTestUiState.Running -> {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = state.step,
+                            color = TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        LinearProgressIndicator(
+                            progress = { state.progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = CyanAccent,
+                            trackColor = DarkBorder
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "${(state.progress * 100).toInt()}% завершено",
+                            color = TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                    is AutoTestUiState.Completed -> {
+                        val r = state.report
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AutoTestInfoRow(label = "Адаптер:", value = r.chipVersion, isGood = r.isOriginalChip)
+                            AutoTestInfoRow(label = "Задержка (пинг):", value = "${r.pingMs} мс", isGood = r.pingMs < 100)
+                            AutoTestInfoRow(label = "Напряжение АКБ:", value = r.batteryVoltage, isGood = true)
+                            AutoTestInfoRow(label = "Протокол шины:", value = r.protocolName, isGood = true)
+                            AutoTestInfoRow(label = "Датчики авто:", value = "${r.supportedPidCount} из ${r.totalTestedCount} активны", isGood = r.supportedPidCount > 0)
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Surface(
+                                color = DarkCard,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "💡 ${r.recommendation}",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                        }
+                    }
+                    else -> {}
+                }
+            }
+        },
+        confirmButton = {
+            if (state is AutoTestUiState.Completed) {
+                Button(
+                    onClick = { onApplyOptimal(state.report) },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "ПРИМЕНИТЬ ДАТЧИКИ",
+                        color = DarkBackground,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            if (state is AutoTestUiState.Completed) {
+                TextButton(onClick = onDismiss) {
+                    Text(text = "ЗАКРЫТЬ", color = TextSecondary)
+                }
+            }
+        },
+        containerColor = DarkSurface,
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
+@Composable
+private fun AutoTestInfoRow(label: String, value: String, isGood: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, color = TextMuted, fontSize = 12.sp)
+        Text(
+            text = value,
+            color = if (isGood) GreenAccent else OrangeWarning,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
