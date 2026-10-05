@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 
 sealed class ConnectionStatus {
     data object Disconnected : ConnectionStatus()
@@ -239,8 +240,12 @@ class ObdViewModel : ViewModel() {
                     }
                 }
 
-                val interval = _appSettings.value.pollingIntervalMs.coerceAtLeast(10L)
-                delay(interval)
+                val interval = _appSettings.value.pollingIntervalMs.coerceAtLeast(0L)
+                if (interval > 0L) {
+                    delay(interval)
+                } else {
+                    yield()
+                }
             }
         }
     }
