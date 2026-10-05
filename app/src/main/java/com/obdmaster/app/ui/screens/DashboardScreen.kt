@@ -31,6 +31,7 @@ fun DashboardScreen(viewModel: ObdViewModel) {
     val status by viewModel.connectionStatus.collectAsState()
     val settings by viewModel.appSettings.collectAsState()
     val autoTestState by viewModel.autoTestState.collectAsState()
+    val tick by viewModel.telemetryTick.collectAsState()
     var showSensorDialog by remember { mutableStateOf(false) }
 
     if (showSensorDialog) {
@@ -63,9 +64,21 @@ fun DashboardScreen(viewModel: ObdViewModel) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Hero Gauges: RPM and Speed
+        // Hero Gauges: RPM and Speed (updated in real time on every packet)
         val rpmPid = pids.find { it is ObdPid.EngineRpm }
         val speedPid = pids.find { it is ObdPid.VehicleSpeed }
+
+        val rpmValStr = if (rpmPid != null && rpmPid.formattedString != "-- ${rpmPid.unit}") {
+            "${rpmPid.currentValue.toInt()}"
+        } else {
+            "--"
+        }
+
+        val speedValStr = if (speedPid != null && speedPid.formattedString != "-- ${speedPid.unit}") {
+            "${speedPid.currentValue.toInt()}"
+        } else {
+            "--"
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -73,14 +86,14 @@ fun DashboardScreen(viewModel: ObdViewModel) {
         ) {
             HeroGaugeCard(
                 title = "ОБОРОТЫ (RPM)",
-                value = rpmPid?.currentValue?.toInt()?.toString() ?: "--",
+                value = rpmValStr,
                 unit = "об/мин",
                 accentColor = CyanAccent,
                 modifier = Modifier.weight(1f)
             )
             HeroGaugeCard(
                 title = "СКОРОСТЬ",
-                value = speedPid?.currentValue?.toInt()?.toString() ?: "--",
+                value = speedValStr,
                 unit = "км/ч",
                 accentColor = GreenAccent,
                 modifier = Modifier.weight(1f)
@@ -144,8 +157,14 @@ fun DashboardScreen(viewModel: ObdViewModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(remainingPids) { pid ->
-                    PidCard(pid = pid)
+                items(remainingPids, key = { it.pidHex }) { pid ->
+                    PidCard(
+                        title = pid.titleRu,
+                        formattedValue = pid.formattedString,
+                        currentValue = pid.currentValue,
+                        minVal = pid.minVal,
+                        maxVal = pid.maxVal
+                    )
                 }
             }
         }
@@ -437,7 +456,13 @@ fun HeroGaugeCard(
 }
 
 @Composable
-fun PidCard(pid: ObdPid) {
+fun PidCard(
+    title: String,
+    formattedValue: String,
+    currentValue: Float,
+    minVal: Float,
+    maxVal: Float
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = DarkSurface),
         shape = RoundedCornerShape(12.dp),
@@ -449,14 +474,14 @@ fun PidCard(pid: ObdPid) {
                 .padding(12.dp)
         ) {
             Text(
-                text = pid.titleRu,
+                text = title,
                 fontSize = 12.sp,
                 color = TextSecondary,
                 maxLines = 1
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = pid.formattedString,
+                text = formattedValue,
                 fontSize = 18.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
@@ -465,7 +490,7 @@ fun PidCard(pid: ObdPid) {
             Spacer(modifier = Modifier.height(6.dp))
 
             // Linear gauge indicator bar
-            val progress = ((pid.currentValue - pid.minVal) / (pid.maxVal - pid.minVal)).coerceIn(0f, 1f)
+            val progress = ((currentValue - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier
