@@ -62,53 +62,14 @@ fun DashboardScreen(viewModel: ObdViewModel) {
             onRunAutoTest = { viewModel.runAutoTest() }
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Hero Gauges: RPM and Speed (updated in real time on every packet)
-        val rpmPid = pids.find { it is ObdPid.EngineRpm }
-        val speedPid = pids.find { it is ObdPid.VehicleSpeed }
-
-        val rpmValStr = if (rpmPid != null && rpmPid.formattedString != "-- ${rpmPid.unit}") {
-            "${rpmPid.currentValue.toInt()}"
-        } else {
-            "--"
-        }
-
-        val speedValStr = if (speedPid != null && speedPid.formattedString != "-- ${speedPid.unit}") {
-            "${speedPid.currentValue.toInt()}"
-        } else {
-            "--"
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            HeroGaugeCard(
-                title = "ОБОРОТЫ (RPM)",
-                value = rpmValStr,
-                unit = "об/мин",
-                accentColor = CyanAccent,
-                modifier = Modifier.weight(1f)
-            )
-            HeroGaugeCard(
-                title = "СКОРОСТЬ",
-                value = speedValStr,
-                unit = "км/ч",
-                accentColor = GreenAccent,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
+        // Панель датчиков (Вариант 1: строго выбранные пользователем датчики)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "ПАРАМЕТРЫ ДАТЧИКОВ",
+                text = "ПРИБОРЫ И ДАТЧИКИ",
                 color = TextSecondary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
@@ -131,20 +92,18 @@ fun DashboardScreen(viewModel: ObdViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Grid of remaining PIDs (filtered by user selection)
-        val remainingPids = pids.filter {
-            it.pidHex in settings.selectedPidHexes && it !is ObdPid.EngineRpm && it !is ObdPid.VehicleSpeed
-        }
+        // Строго выбранные датчики (включая обороты и скорость, если они выбраны)
+        val activePids = pids.filter { it.pidHex in settings.selectedPidHexes }
 
-        if (remainingPids.isEmpty()) {
+        if (activePids.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Нет выбранных дополнительных датчиков.\nНажмите «⚙️ Датчики» выше для выбора.",
+                    text = "Нет выбранных датчиков.\nНажмите «⚙️ Датчики» выше для выбора.",
                     color = TextSecondary,
                     fontSize = 13.sp,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -157,13 +116,27 @@ fun DashboardScreen(viewModel: ObdViewModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(remainingPids, key = { it.pidHex }) { pid ->
+                items(activePids, key = { it.pidHex }) { pid ->
+                    val (dispVal, dispUnit) = pid.getDisplayValue(settings)
+                    val (dispMin, dispMax) = pid.getDisplayMinMax(settings)
+
+                    // Проверка тревоги для подсветки карточки
+                    val isAlarming = settings.alarmMasterEnabled && when (pid.pidHex) {
+                        "05" -> settings.coolantAlarmEnabled && pid.currentValue >= settings.coolantAlarmThresholdC
+                        "0D" -> settings.speedAlarmEnabled && pid.currentValue >= settings.speedAlarmThresholdKmh
+                        "0C" -> settings.rpmAlarmEnabled && pid.currentValue >= settings.rpmAlarmThresholdRpm
+                        "42" -> settings.batteryAlarmEnabled && pid.currentValue > 5f && pid.currentValue <= settings.batteryAlarmThresholdV
+                        else -> false
+                    }
+
                     PidCard(
                         title = pid.titleRu,
-                        formattedValue = pid.formattedString,
+                        displayValue = dispVal,
+                        unit = dispUnit,
                         currentValue = pid.currentValue,
-                        minVal = pid.minVal,
-                        maxVal = pid.maxVal
+                        minVal = dispMin,
+                        maxVal = dispMax,
+                        isAlarm = isAlarming
                     )
                 }
             }
@@ -458,13 +431,18 @@ fun HeroGaugeCard(
 @Composable
 fun PidCard(
     title: String,
-    formattedValue: String,
+    displayValue: String,
+    unit: String,
     currentValue: Float,
     minVal: Float,
-    maxVal: Float
+    maxVal: Float,
+    isAlarm: Boolean = false
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isAlarm) RedError.copy(alpha = 0.2f) else DarkSurface
+        ),
+        border = if (isAlarm) androidx.compose.foundation.BorderStroke(1.5.dp, RedError) else null,
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -476,28 +454,39 @@ fun PidCard(
             Text(
                 text = title,
                 fontSize = 12.sp,
-                color = TextSecondary,
+                color = if (isAlarm) RedError else TextSecondary,
                 maxLines = 1
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = formattedValue,
-                fontSize = 18.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = displayValue,
+                    fontSize = 20.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isAlarm) RedError else TextPrimary
+                )
+                Text(
+                    text = unit,
+                    fontSize = 12.sp,
+                    color = if (isAlarm) RedError else TextMuted,
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
+            }
             Spacer(modifier = Modifier.height(6.dp))
 
             // Linear gauge indicator bar
-            val progress = ((currentValue - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
+            val progress = if (maxVal > minVal) ((currentValue - minVal) / (maxVal - minVal)).coerceIn(0f, 1f) else 0f
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp)),
-                color = CyanAccent,
+                color = if (isAlarm) RedError else CyanAccent,
                 trackColor = DarkBorder,
             )
         }

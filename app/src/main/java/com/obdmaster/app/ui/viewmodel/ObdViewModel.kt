@@ -1,9 +1,17 @@
 package com.obdmaster.app.ui.viewmodel
 
 import android.annotation.SuppressLint
+import android.app.Application
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
-import androidx.lifecycle.ViewModel
+import android.content.Context
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.obdmaster.app.core.protocol.DtcItem
 import com.obdmaster.app.core.protocol.DtcService
@@ -14,6 +22,8 @@ import com.obdmaster.app.core.protocol.VehicleInfoService
 import com.obdmaster.app.core.transport.BluetoothSppTransport
 import com.obdmaster.app.core.transport.ObdTransport
 import com.obdmaster.app.core.transport.WifiTcpTransport
+import com.obdmaster.app.data.AppSettings
+import com.obdmaster.app.data.SettingsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,6 +33,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
+import java.util.Locale
 
 sealed class ConnectionStatus {
     data object Disconnected : ConnectionStatus()
@@ -44,7 +55,9 @@ enum class ConnectionType {
     WIFI
 }
 
-class ObdViewModel : ViewModel() {
+class ObdViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val settingsManager = SettingsManager(application.applicationContext)
 
     private val _connectionStatus = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Disconnected)
     val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
@@ -82,28 +95,18 @@ class ObdViewModel : ViewModel() {
     private val _pairedDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
     val pairedDevices: StateFlow<List<BluetoothDevice>> = _pairedDevices.asStateFlow()
 
-    private val _appSettings = MutableStateFlow(com.obdmaster.app.data.AppSettings())
-    val appSettings: StateFlow<com.obdmaster.app.data.AppSettings> = _appSettings.asStateFlow()
+    private val _appSettings = MutableStateFlow(settingsManager.loadSettings())
+    val appSettings: StateFlow<AppSettings> = _appSettings.asStateFlow()
 
-    fun updateSettings(newSettings: com.obdmaster.app.data.AppSettings) {
-        _appSettings.value = newSettings
-    }
+    // Активное предупреждение безопасности
+    private val _activeAlarm = MutableStateFlow<String?>(null)
+    val activeAlarm: StateFlow<String?> = _activeAlarm.asStateFlow()
 
-    fun togglePidSelection(pidHex: String) {
-        val current = _appSettings.value.selectedPidHexes.toMutableSet()
-        if (current.contains(pidHex)) {
-            if (current.size > 1) { // keep at least 1 sensor active
-                current.remove(pidHex)
-            }
-        } else {
-            current.add(pidHex)
-        }
-        updateSettings(_appSettings.value.copy(selectedPidHexes = current))
-    }
+    private var toneGenerator: ToneGenerator? = null
+    private var lastAlarmTimestamp: Long = 0L
 
-    fun setPidSelectionPreset(presetHexes: Set<String>) {
-        updateSettings(_appSettings.value.copy(selectedPidHexes = presetHexes))
-    }
+    var currentScreenRoute: String = _appSettings.value.lastActiveScreenRoute
+        private set
 
     private var activeTransport: ObdTransport? = null
     private var protocol: Elm327Protocol? = null
@@ -112,19 +115,258 @@ class ObdViewModel : ViewModel() {
     private var pollingJob: Job? = null
 
     init {
+        // Восстановление выбранного датчика графика из настроек
+        val savedHex = _appSettings.value.savedChartPidHex
+        _pids.value.find { it.pidHex == savedHex }?.let { _chartPid.value = it }
+
+        try {
+            toneGenerator = ToneGenerator(AudioManager.STREAM_ALARM, 85)
+        } catch (_: Exception) {}
+
         refreshPairedDevices()
     }
 
-    fun setConnectionType(type: ConnectionType) {
-        _connectionType.value = type
+    fun updateSettings(newSettings: AppSettings) {
+        _appSettings.value = newSettings
+        settingsManager.saveSettings(newSettings)
+    }
+
+    /**
+     * Смена экрана (таба): немедленный сброс старой очереди опроса и выбор стратегии
+     */
+    fun onScreenChanged(route: String) {
+        if (currentScreenRoute == route) return
+        currentScreenRoute = route
+        updateSettings(_appSettings.value.copy(lastActiveScreenRoute = route))
+
+        if (activeTransport?.isConnected == true) {
+            startPollingForCurrentScreen()
+        }
+    }
+
+    /**
+     * Запуск опроса в зависимости от активного экрана:
+     * - "charts": опрос ТОЛЬКО 1 датчика графика на 100% скорости шины.
+     * - "dashboard": опрос выбранных датчиков.
+     * - "diagnostics", "terminal", "settings": полный стоп опроса (0% загрузки, шина свободна).
+     */
+    private fun startPollingForCurrentScreen() {
+        pollingJob?.cancel()
+        pollingJob = null
+
+        when (currentScreenRoute) {
+            "charts" -> startTurboChartPolling()
+            "dashboard" -> startDashboardPolling()
+            else -> {
+                // На вкладках Ошибок, Терминала и Настроек опрос полностью заглушен
+                _activeAlarm.value = null
+            }
+        }
+    }
+
+    private fun startTurboChartPolling() {
+        pollingJob?.cancel()
+        pollingJob = viewModelScope.launch(Dispatchers.IO) {
+            val proto = protocol ?: return@launch
+            val targetPid = _chartPid.value
+
+            while (isActive && activeTransport?.isConnected == true) {
+                val rawResp = proto.sendCommand("01 ${targetPid.pidHex}")
+                val success = targetPid.decode(rawResp)
+                if (success) {
+                    val currentList = _chartHistory.value.toMutableList()
+                    if (currentList.size > 60) currentList.removeAt(0)
+                    currentList.add(targetPid.currentValue)
+                    _chartHistory.value = currentList
+                    _telemetryTick.value = System.nanoTime()
+
+                    checkAlarmsForPid(targetPid)
+                }
+
+                val interval = _appSettings.value.pollingIntervalMs.coerceAtLeast(0L)
+                if (interval > 0L) {
+                    delay(interval)
+                } else {
+                    yield()
+                }
+            }
+        }
+    }
+
+    private fun startDashboardPolling() {
+        pollingJob?.cancel()
+        pollingJob = viewModelScope.launch(Dispatchers.IO) {
+            val proto = protocol ?: return@launch
+
+            while (isActive && activeTransport?.isConnected == true) {
+                val allPids = _pids.value
+                val selectedHexes = _appSettings.value.selectedPidHexes
+
+                val cyclePids = allPids.filter { it.isSupported && it.pidHex in selectedHexes }
+                if (cyclePids.isEmpty()) {
+                    delay(200)
+                    continue
+                }
+
+                for (pid in cyclePids) {
+                    if (!isActive) break
+                    val rawResp = proto.sendCommand("01 ${pid.pidHex}")
+                    val success = pid.decode(rawResp)
+                    if (success) {
+                        _telemetryTick.value = System.nanoTime()
+                        checkAlarmsForPid(pid)
+                    }
+                }
+
+                val interval = _appSettings.value.pollingIntervalMs.coerceAtLeast(0L)
+                if (interval > 0L) {
+                    delay(interval)
+                } else {
+                    yield()
+                }
+            }
+        }
+    }
+
+    /**
+     * Проверка порогов безопасности (строго только для тех датчиков, которые сейчас реально опрашиваются)
+     */
+    private fun checkAlarmsForPid(pid: ObdPid) {
+        val settings = _appSettings.value
+        if (!settings.alarmMasterEnabled) {
+            _activeAlarm.value = null
+            return
+        }
+
+        when (pid.pidHex) {
+            "05" -> { // ОЖ
+                if (settings.coolantAlarmEnabled && pid.currentValue >= settings.coolantAlarmThresholdC) {
+                    triggerAlarm("⚠️ ПЕРЕГРЕВ ДВИГАТЕЛЯ! ${pid.currentValue.toInt()} °C (порог ${settings.coolantAlarmThresholdC} °C)")
+                    return
+                }
+            }
+            "0D" -> { // Скорость
+                if (settings.speedAlarmEnabled && pid.currentValue >= settings.speedAlarmThresholdKmh) {
+                    triggerAlarm("⚠️ ПРЕВЫШЕНИЕ СКОРОСТИ! ${pid.currentValue.toInt()} км/ч (порог ${settings.speedAlarmThresholdKmh} км/ч)")
+                    return
+                }
+            }
+            "0C" -> { // Обороты
+                if (settings.rpmAlarmEnabled && pid.currentValue >= settings.rpmAlarmThresholdRpm) {
+                    triggerAlarm("⚠️ ОТСЕЧКА ОБОРОТОВ! ${pid.currentValue.toInt()} об/мин (порог ${settings.rpmAlarmThresholdRpm})")
+                    return
+                }
+            }
+            "42" -> { // АКБ
+                if (settings.batteryAlarmEnabled && pid.currentValue > 5f && pid.currentValue <= settings.batteryAlarmThresholdV) {
+                    val formatted = String.format(Locale.US, "%.1f", pid.currentValue)
+                    triggerAlarm("⚠️ ПРОСАДКА АКБ! $formatted В (порог ${settings.batteryAlarmThresholdV} В)")
+                    return
+                }
+            }
+        }
+
+        // Если все показатели в норме
+        if (_activeAlarm.value != null && System.currentTimeMillis() - lastAlarmTimestamp > 4000L) {
+            _activeAlarm.value = null
+        }
+    }
+
+    private fun triggerAlarm(alertMessage: String) {
+        _activeAlarm.value = alertMessage
+        val now = System.currentTimeMillis()
+        val settings = _appSettings.value
+        if (!settings.alarmMasterEnabled) return
+
+        val repeatIntervalMs = when (settings.alarmRepeatIntervalSec) {
+            2 -> 2000L   // Турбо
+            5 -> 5000L
+            15 -> 15000L // Обычный
+            30 -> 30000L
+            60 -> 60000L
+            -1 -> Long.MAX_VALUE // Только 1 раз
+            else -> 15000L
+        }
+
+        if (now - lastAlarmTimestamp >= repeatIntervalMs) {
+            lastAlarmTimestamp = now
+            playAlarmSoundAndVibration()
+        }
+    }
+
+    private fun playAlarmSoundAndVibration() {
+        try {
+            // Звуковой зуммер
+            toneGenerator?.startTone(ToneGenerator.TONE_CDMA_ALERT_AUTIAL_LOUD, 350)
+        } catch (_: Exception) {}
+
+        try {
+            // Двойной виброотклик
+            val ctx = getApplication<Application>().applicationContext
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vm?.defaultVibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 200, 100, 200), -1))
+            } else {
+                @Suppress("DEPRECATION")
+                val v = ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 200, 100, 200), -1))
+                } else {
+                    @Suppress("DEPRECATION")
+                    v?.vibrate(300)
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun dismissActiveAlarm() {
+        _activeAlarm.value = null
+    }
+
+    fun togglePidSelection(pidHex: String) {
+        val current = _appSettings.value.selectedPidHexes.toMutableSet()
+        if (current.contains(pidHex)) {
+            if (current.size > 1) {
+                current.remove(pidHex)
+            }
+        } else {
+            current.add(pidHex)
+        }
+        updateSettings(_appSettings.value.copy(selectedPidHexes = current))
+        if (currentScreenRoute == "dashboard" && activeTransport?.isConnected == true) {
+            startPollingForCurrentScreen()
+        }
+    }
+
+    fun setPidSelectionPreset(presetHexes: Set<String>) {
+        updateSettings(_appSettings.value.copy(selectedPidHexes = presetHexes))
+        if (currentScreenRoute == "dashboard" && activeTransport?.isConnected == true) {
+            startPollingForCurrentScreen()
+        }
     }
 
     fun setChartPid(pid: ObdPid) {
         _chartPid.value = pid
         _chartHistory.value = emptyList()
+        updateSettings(_appSettings.value.copy(savedChartPidHex = pid.pidHex))
+        if (currentScreenRoute == "charts" && activeTransport?.isConnected == true) {
+            startPollingForCurrentScreen()
+        }
     }
 
     fun selectChartPid(pid: ObdPid) = setChartPid(pid)
+
+    fun setChartVisualScheme(schemeIndex: Int) {
+        updateSettings(_appSettings.value.copy(chartVisualScheme = schemeIndex))
+    }
+
+    fun clearTerminalLogs() {
+        _terminalLogs.value = emptyList()
+    }
+
+    fun setConnectionType(type: ConnectionType) {
+        _connectionType.value = type
+    }
 
     @SuppressLint("MissingPermission")
     fun refreshPairedDevices() {
@@ -133,7 +375,7 @@ class ObdViewModel : ViewModel() {
             if (adapter != null && adapter.isEnabled) {
                 _pairedDevices.value = adapter.bondedDevices.toList()
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             _pairedDevices.value = emptyList()
         }
     }
@@ -142,6 +384,7 @@ class ObdViewModel : ViewModel() {
         viewModelScope.launch {
             disconnect()
             _connectionStatus.value = ConnectionStatus.Connecting("Подключение к ${device.name ?: device.address}...")
+            updateSettings(_appSettings.value.copy(lastConnectedDeviceMac = device.address))
 
             val transport = BluetoothSppTransport(device)
             activeTransport = transport
@@ -186,7 +429,7 @@ class ObdViewModel : ViewModel() {
                 protocol = proto.detectedProtocol
             )
             appendTerminal("Подключено! Протокол: ${proto.detectedProtocol}, АКБ: ${proto.batteryVoltage}")
-            startPolling()
+            startPollingForCurrentScreen()
             loadVehicleInfo()
         } else {
             _connectionStatus.value = ConnectionStatus.Error("ELM327 ответил, но связь с ЭБУ не установлена (зажигание включено?)")
@@ -200,59 +443,15 @@ class ObdViewModel : ViewModel() {
         activeTransport = null
         protocol = null
         _connectionStatus.value = ConnectionStatus.Disconnected
+        _activeAlarm.value = null
         appendTerminal("Отключено от адаптера.")
-    }
-
-    private fun startPolling() {
-        pollingJob?.cancel()
-        pollingJob = viewModelScope.launch(Dispatchers.IO) {
-            while (isActive && activeTransport?.isConnected == true) {
-                val proto = protocol ?: break
-                val allPids = _pids.value
-                val selectedHexes = _appSettings.value.selectedPidHexes
-                val currentChartHex = _chartPid.value.pidHex
-
-                // Only poll sensors selected by the user (and supported)
-                // Plus the active chart sensor if viewing the Charts screen
-                val cyclePids = allPids.filter { 
-                    it.isSupported && (it.pidHex in selectedHexes || it.pidHex == currentChartHex) 
-                }
-
-                if (cyclePids.isEmpty()) {
-                    delay(200)
-                    continue
-                }
-
-                // Query only the selected PIDs and update UI IMMEDIATELY on each packet!
-                for (pid in cyclePids) {
-                    if (!isActive) break
-                    val rawResp = proto.sendCommand("01 ${pid.pidHex}")
-                    val success = pid.decode(rawResp)
-                    if (success) {
-                        if (pid.pidHex == currentChartHex) {
-                            val currentList = _chartHistory.value.toMutableList()
-                            if (currentList.size > 50) currentList.removeAt(0)
-                            currentList.add(pid.currentValue)
-                            _chartHistory.value = currentList
-                        }
-                        // Emit tick with nano timestamp so Compose recomposes with ZERO lag on EVERY packet!
-                        _telemetryTick.value = System.nanoTime()
-                    }
-                }
-
-                val interval = _appSettings.value.pollingIntervalMs.coerceAtLeast(0L)
-                if (interval > 0L) {
-                    delay(interval)
-                } else {
-                    yield()
-                }
-            }
-        }
     }
 
     fun scanDtcs() {
         viewModelScope.launch {
             val service = dtcService ?: return@launch
+            // Прерываем опрос датчиков, чтобы шина была на 100% свободна для чтения ошибок!
+            pollingJob?.cancel()
             _isDtcScanning.value = true
             appendTerminal("Запуск сканирования кодов ошибок DTC...")
 
@@ -275,11 +474,12 @@ class ObdViewModel : ViewModel() {
     fun clearDtcs(onCompleted: (Boolean) -> Unit) {
         viewModelScope.launch {
             val service = dtcService ?: return@launch
+            pollingJob?.cancel()
             appendTerminal("Отправка команды сброса кодов ошибок (Mode 04)...")
             val success = service.clearDtcs()
             if (success) {
                 _dtcList.value = emptyList()
-                appendTerminal("Команды сброса выполнены успешно!")
+                appendTerminal("Команда сброса выполнена успешно! Check Engine погашен.")
             } else {
                 appendTerminal("Не удалось сбросить ошибки.")
             }
@@ -339,7 +539,7 @@ class ObdViewModel : ViewModel() {
                 appendTerminal("Ошибка автотеста: ${e.localizedMessage}")
                 _autoTestState.value = AutoTestUiState.Idle
             } finally {
-                startPolling()
+                startPollingForCurrentScreen()
             }
         }
     }
@@ -356,6 +556,9 @@ class ObdViewModel : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
+        try {
+            toneGenerator?.release()
+        } catch (_: Exception) {}
         disconnect()
     }
 }

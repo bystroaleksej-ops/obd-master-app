@@ -45,6 +45,7 @@ class ObdConnectionService : Service() {
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(getString(R.string.notification_content))
             .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setBadgeIconType(NotificationCompat.BADGE_ICON_NONE)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
@@ -59,5 +60,10 @@ class ObdConnectionService : Service() {
         } else {
             startForeground(1001, notification)
         }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        stopSelf()
     }
 }

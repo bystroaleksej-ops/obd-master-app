@@ -27,6 +27,12 @@ class ObdProtocolTest {
         assertTrue("Speed decode should succeed", ok)
         assertEquals(60f, speed.currentValue, 0.01f)
         assertEquals("60 км/ч", speed.formattedString)
+
+        // Custom unit test: mph
+        val mphSettings = AppSettings(speedUnit = "mph")
+        val (valStr, unitStr) = speed.getDisplayValue(mphSettings)
+        assertEquals("37", valStr)
+        assertEquals("mph", unitStr)
     }
 
     @Test
@@ -37,6 +43,12 @@ class ObdProtocolTest {
         assertTrue("Coolant temp decode should succeed", ok)
         assertEquals(50f, temp.currentValue, 0.01f)
         assertEquals("50 °C", temp.formattedString)
+
+        // Custom unit test: °F
+        val fahrSettings = AppSettings(tempUnit = "°F")
+        val (fValStr, fUnitStr) = temp.getDisplayValue(fahrSettings)
+        assertEquals("122", fValStr)
+        assertEquals("°F", fUnitStr)
     }
 
     @Test
@@ -64,5 +76,6 @@ class ObdProtocolTest {
         assertTrue("Selected PIDs should contain RPM (0C)", settings.selectedPidHexes.contains("0C"))
         assertTrue("Selected PIDs should contain Speed (0D)", settings.selectedPidHexes.contains("0D"))
         assertEquals(100L, settings.pollingIntervalMs)
+        assertEquals(2, settings.alarmRepeatIntervalSec) // Default 2s turbo repeat
     }
 }

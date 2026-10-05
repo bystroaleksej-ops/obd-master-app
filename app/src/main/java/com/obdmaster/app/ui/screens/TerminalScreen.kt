@@ -1,16 +1,17 @@
 package com.obdmaster.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.ui.draw.rotate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -53,25 +54,18 @@ val COMMANDS_REFERENCE = listOf(
     TerminalCommandInfo("01 04", "Нагрузка мотора", "Расчетная нагрузка на двигатель в %", "Датчики (Mode 01)"),
     TerminalCommandInfo("01 10", "Расход воздуха MAF", "Массовый расход воздуха на впуске (г/с)", "Датчики (Mode 01)"),
     TerminalCommandInfo("01 0B", "Давление MAP", "Абсолютное давление во впускном коллекторе", "Датчики (Mode 01)"),
-    TerminalCommandInfo("01 0F", "Температура IAT", "Температура воздуха на впуске", "Датчики (Mode 01)")
+    TerminalCommandInfo("01 0F", "Температура IAT", "Температура воздуха на впуске", "Датчики (Mode 01)"),
+    TerminalCommandInfo("01 42", "Напряжение ЭБУ", "Питание на выходе блока управления в Вольтах", "Датчики (Mode 01)")
 )
 
 @Composable
 fun TerminalScreen(viewModel: ObdViewModel) {
     val logs by viewModel.terminalLogs.collectAsState()
     val vehicleInfo by viewModel.vehicleInfo.collectAsState()
-    var inputCommand by remember { mutableStateOf("") }
-    var isDropdownExpanded by remember { mutableStateOf(false) }
     var showReferenceDialog by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
-    // Find description for current input command
-    val activeHelp = remember(inputCommand) {
-        val trimmed = inputCommand.trim().uppercase()
-        COMMANDS_REFERENCE.find { it.command.uppercase() == trimmed }
-    }
-
-    // Auto scroll to bottom
+    // Авто-прокрутка к последней записи
     LaunchedEffect(logs.size) {
         if (logs.isNotEmpty()) {
             listState.animateScrollToItem(logs.size - 1)
@@ -84,7 +78,7 @@ fun TerminalScreen(viewModel: ObdViewModel) {
             .background(DarkBackground)
             .padding(16.dp)
     ) {
-        // Vehicle Info Card
+        // Паспортные данные (Mode 09)
         Card(
             colors = CardDefaults.cardColors(containerColor = DarkSurface),
             shape = RoundedCornerShape(12.dp),
@@ -112,7 +106,7 @@ fun TerminalScreen(viewModel: ObdViewModel) {
                     ) {
                         Icon(Icons.Default.Info, contentDescription = "Справка", tint = CyanAccent, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Справочник команд", color = CyanAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Справка", color = CyanAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -120,26 +114,109 @@ fun TerminalScreen(viewModel: ObdViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(text = "VIN: ${vehicleInfo.vin}", fontSize = 13.sp, color = CyanAccent, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                    Text(text = "АКБ: ${vehicleInfo.batteryVoltage}", fontSize = 13.sp, color = GreenAccent, fontFamily = FontFamily.Monospace)
-                }
-                Spacer(modifier = Modifier.height(2.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(text = "Протокол: ${vehicleInfo.protocolName}", fontSize = 11.sp, color = TextSecondary)
-                    Text(text = "Адаптер: ${vehicleInfo.adapterVersion}", fontSize = 11.sp, color = TextSecondary)
+                    Column {
+                        Text(text = "VIN НОМЕР", fontSize = 10.sp, color = TextMuted)
+                        Text(
+                            text = if (vehicleInfo.vin.isNotBlank()) vehicleInfo.vin else "Не прочитан (нажмите 09 02 ниже)",
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = if (vehicleInfo.vin.isNotBlank()) CyanAccent else TextSecondary
+                        )
+                    }
+                    if (vehicleInfo.calibrationId.isNotBlank()) {
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(text = "КАЛИБРОВКА (CAL ID)", fontSize = 10.sp, color = TextMuted)
+                            Text(
+                                text = vehicleInfo.calibrationId,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = TextSecondary
+                            )
+                        }
+                    }
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Terminal Log Output (Takes maximum screen area now)
+        // Горизонтальная лента со ВСЕМИ командами (отправка в 1 клик!)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "БЫСТРЫЕ КОМАНДЫ (1 КЛИК)",
+                fontSize = 11.sp,
+                color = TextSecondary,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Text(
+                text = "${COMMANDS_REFERENCE.size} команд",
+                fontSize = 11.sp,
+                color = CyanAccent,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            items(COMMANDS_REFERENCE) { cmd ->
+                Surface(
+                    color = DarkSurface,
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, DarkBorder),
+                    modifier = Modifier.clickable {
+                        viewModel.sendTerminalCommand(cmd.command)
+                    }
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = cmd.command,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = CyanAccent,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "• ${cmd.shortTitleRu}",
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = cmd.descriptionRu,
+                            color = TextMuted,
+                            fontSize = 10.sp,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Экран логов терминала (максимальная высота)
         Card(
             colors = CardDefaults.cardColors(containerColor = DarkSurface),
             shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, DarkBorder),
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -152,157 +229,56 @@ fun TerminalScreen(viewModel: ObdViewModel) {
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 items(logs) { log ->
-                    val color = when {
-                        log.startsWith(">") -> CyanAccent
-                        log.startsWith("ERR") || log.contains("ERROR") -> RedError
-                        log.contains("OK") || log.contains("Подключено") -> GreenAccent
-                        else -> TextPrimary
-                    }
+                    val isUserCmd = log.startsWith(">")
+                    val isError = log.startsWith("ERR") || log.contains("ERROR", ignoreCase = true)
                     Text(
                         text = log,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
-                        color = color,
+                        color = when {
+                            isUserCmd -> CyanAccent
+                            isError -> RedError
+                            else -> TextSecondary
+                        },
                         lineHeight = 16.sp
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // Dynamic explanation of current command if recognized
-        if (activeHelp != null) {
-            Surface(
-                color = DarkCard,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "ℹ️ ${activeHelp.shortTitleRu}: ",
-                        fontWeight = FontWeight.Bold,
-                        color = CyanAccent,
-                        fontSize = 11.sp
-                    )
-                    Text(
-                        text = activeHelp.descriptionRu,
-                        color = TextPrimary,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-        }
-
-        // Input Bar with Dropdown command picker and Send button
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        // Кнопка очистки терминала внизу
+        Button(
+            onClick = { viewModel.clearTerminalLogs() },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = DarkSurface,
+                contentColor = RedError
+            ),
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, DarkBorder),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
         ) {
-            Box(modifier = Modifier.weight(1f)) {
-                OutlinedTextField(
-                    value = inputCommand,
-                    onValueChange = { inputCommand = it },
-                    placeholder = { Text("Команда или выберите из списка...", color = TextMuted, fontSize = 12.sp) },
-                    singleLine = true,
-                    trailingIcon = {
-                        IconButton(onClick = { isDropdownExpanded = !isDropdownExpanded }) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowDropDown,
-                                contentDescription = "Выбрать команду",
-                                tint = CyanAccent,
-                                modifier = Modifier.rotate(if (isDropdownExpanded) 180f else 0f)
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = CyanAccent,
-                        unfocusedBorderColor = DarkBorder,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedContainerColor = DarkSurface,
-                        unfocusedContainerColor = DarkSurface
-                    )
-                )
-
-                // Dropdown menu showing all available commands
-                DropdownMenu(
-                    expanded = isDropdownExpanded,
-                    onDismissRequest = { isDropdownExpanded = false },
-                    modifier = Modifier
-                        .fillMaxWidth(0.85f)
-                        .heightIn(max = 350.dp)
-                        .background(DarkSurface)
-                ) {
-                    COMMANDS_REFERENCE.forEach { cmd ->
-                        DropdownMenuItem(
-                            text = {
-                                Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = cmd.command,
-                                            fontWeight = FontWeight.Bold,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = CyanAccent,
-                                            fontSize = 13.sp
-                                        )
-                                        Text(
-                                            text = cmd.category,
-                                            fontSize = 10.sp,
-                                            color = TextMuted
-                                        )
-                                    }
-                                    Text(
-                                        text = "${cmd.shortTitleRu} — ${cmd.descriptionRu}",
-                                        fontSize = 11.sp,
-                                        color = TextSecondary,
-                                        lineHeight = 15.sp,
-                                        maxLines = 2
-                                    )
-                                }
-                            },
-                            onClick = {
-                                inputCommand = cmd.command
-                                isDropdownExpanded = false
-                            }
-                        )
-                        HorizontalDivider(color = DarkBorder, thickness = 0.5.dp)
-                    }
-                }
-            }
-
+            Icon(Icons.Default.Delete, contentDescription = "Очистить", tint = RedError, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-
-            Button(
-                onClick = {
-                    if (inputCommand.isNotBlank()) {
-                        viewModel.sendTerminalCommand(inputCommand.trim())
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = DarkBackground),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text("Отправить", fontWeight = FontWeight.Bold)
-            }
+            Text(
+                text = "Очистить терминал",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = RedError
+            )
         }
     }
 
-    // Modal dialog with Full Commands Reference
+    // Модальное окно со справочником команд
     if (showReferenceDialog) {
         AlertDialog(
             onDismissRequest = { showReferenceDialog = false },
             title = {
                 Text(
-                    text = "СПРАВОЧНИК КОМАНД OBD-II И ELM327",
+                    text = "СПРАВОЧНИК КОМАНД OBD-II",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = CyanAccent
@@ -317,11 +293,10 @@ fun TerminalScreen(viewModel: ObdViewModel) {
                         Surface(
                             color = DarkCard,
                             shape = RoundedCornerShape(8.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder),
+                            border = BorderStroke(1.dp, DarkBorder),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    inputCommand = item.command
                                     viewModel.sendTerminalCommand(item.command)
                                     showReferenceDialog = false
                                 }

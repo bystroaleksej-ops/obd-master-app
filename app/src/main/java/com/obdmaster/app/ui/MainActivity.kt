@@ -77,4 +77,9 @@ class MainActivity : ComponentActivity() {
             startService(serviceIntent)
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopService(Intent(this, ObdConnectionService::class.java))
+    }
 }

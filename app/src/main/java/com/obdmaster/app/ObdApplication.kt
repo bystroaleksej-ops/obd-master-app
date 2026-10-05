@@ -23,6 +23,7 @@ class ObdApplication : Application() {
             val importance = NotificationManager.IMPORTANCE_LOW
             val channel = NotificationChannel(OBD_CHANNEL_ID, name, importance).apply {
                 description = descriptionText
+                setShowBadge(false)
             }
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager?.createNotificationChannel(channel)
