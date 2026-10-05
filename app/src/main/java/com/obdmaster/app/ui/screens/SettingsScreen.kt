@@ -3,6 +3,8 @@ package com.obdmaster.app.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -71,18 +73,30 @@ fun SettingsScreen(viewModel: ObdViewModel) {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Polling Rate
-                Text(text = "Частота опроса датчиков:", fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
+                // Polling Pause between cycles
+                Text(text = "Пауза между кругами опроса:", fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "Микропауза после опроса всех выбранных датчиков перед началом нового круга. 0–20 мс — максимальная скорость и плавность приборов.",
+                    fontSize = 11.sp,
+                    color = TextSecondary
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                LazyRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    listOf(50L to "Быстрая (50 мс)", 100L to "Обычная (100 мс)", 250L to "Эконом (250 мс)").forEach { (ms, label) ->
+                    val intervals = listOf(
+                        0L to "0 мс (Турбо)",
+                        20L to "20 мс (Быстро)",
+                        50L to "50 мс",
+                        100L to "100 мс (Обычная)",
+                        250L to "250 мс (Эконом)"
+                    )
+                    items(intervals) { (ms, label) ->
                         FilterChip(
                             selected = settings.pollingIntervalMs == ms,
                             onClick = { viewModel.updateSettings(settings.copy(pollingIntervalMs = ms)) },
-                            label = { Text(label, fontSize = 10.sp) },
+                            label = { Text(label, fontSize = 11.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = CyanAccent,
                                 selectedLabelColor = DarkBackground,
