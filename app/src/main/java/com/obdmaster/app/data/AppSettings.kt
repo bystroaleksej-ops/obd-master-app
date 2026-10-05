@@ -1,132 +1,59 @@
-package com.obdmaster.app.data
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+}
 
-import android.content.Context
-import android.content.SharedPreferences
+android {
+    namespace = "com.obdmaster.app"
+    compileSdk = 35
 
-data class AppSettings(
-    // 1. Connection & Timing
-    val pollingIntervalMs: Long = 100L, // 0: Turbo, 20: Fast, 50, 100: Normal, 250: Eco
-    val lastConnectedDeviceMac: String = "",
-    val protocolIndex: Int = 0,
-    val autoReconnect: Boolean = true,
-    val elmTimeoutMs: Int = 200,
+    defaultConfig {
+        applicationId = "com.obdmaster.app"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 7
+        versionName = "1.4.0"
 
-    // 2. Active Sensors & Charts
-    val selectedPidHexes: Set<String> = setOf("0C", "0D", "05", "04", "11", "42"),
-    val savedChartPidHex: String = "0C", // Запомненный датчик на вкладке графиков
-    val chartVisualScheme: Int = 0, // 0: Неон, 1: Зоны (светофор), 2: Столбцы, 3: Прибор
-    val lastActiveScreenRoute: String = "dashboard", // Запоминание последней открытой вкладки
-
-    // 3. Alerts & Engine Protection
-    val alarmMasterEnabled: Boolean = true, // Главный переключатель звука/вибрации тревог
-    val alarmRepeatIntervalSec: Int = 15, // 2: Турбо, 5, 15, 30, 60, -1: Только 1 раз
-
-    val coolantAlarmEnabled: Boolean = true,
-    val coolantAlarmThresholdC: Int = 102,
-
-    val speedAlarmEnabled: Boolean = true,
-    val speedAlarmThresholdKmh: Int = 110,
-
-    val rpmAlarmEnabled: Boolean = true,
-    val rpmAlarmThresholdRpm: Int = 5500,
-
-    val batteryAlarmEnabled: Boolean = true,
-    val batteryAlarmThresholdV: Float = 11.8f,
-
-    // 4. Custom Units for Sensors
-    val speedUnit: String = "км/ч", // "км/ч" или "mph"
-    val tempUnit: String = "°C", // "°C" или "°F"
-    val pressureUnit: String = "кПа", // "кПа" или "бар"
-
-    // 5. Display & Extras
-    val keepScreenOn: Boolean = true,
-    val hudMode: Boolean = false,
-    val deepScanAllModules: Boolean = false,
-    val terminalAutoTranslate: Boolean = true
-)
-
-class SettingsManager(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("obd_master_prefs", Context.MODE_PRIVATE)
-
-    fun loadSettings(): AppSettings {
-        return AppSettings(
-            pollingIntervalMs = prefs.getLong("pollingIntervalMs", 100L),
-            lastConnectedDeviceMac = prefs.getString("lastConnectedDeviceMac", "") ?: "",
-            protocolIndex = prefs.getInt("protocolIndex", 0),
-            autoReconnect = prefs.getBoolean("autoReconnect", true),
-            elmTimeoutMs = prefs.getInt("elmTimeoutMs", 200),
-
-            selectedPidHexes = prefs.getStringSet("selectedPidHexes", setOf("0C", "0D", "05", "04", "11", "42")) ?: setOf("0C", "0D", "05", "04", "11", "42"),
-            savedChartPidHex = prefs.getString("savedChartPidHex", "0C") ?: "0C",
-            chartVisualScheme = prefs.getInt("chartVisualScheme", 0),
-            lastActiveScreenRoute = prefs.getString("lastActiveScreenRoute", "dashboard") ?: "dashboard",
-
-            alarmMasterEnabled = prefs.getBoolean("alarmMasterEnabled", true),
-            alarmRepeatIntervalSec = prefs.getInt("alarmRepeatIntervalSec", 15),
-
-            coolantAlarmEnabled = prefs.getBoolean("coolantAlarmEnabled", true),
-            coolantAlarmThresholdC = prefs.getInt("coolantAlarmThresholdC", 102),
-
-            speedAlarmEnabled = prefs.getBoolean("speedAlarmEnabled", true),
-            speedAlarmThresholdKmh = prefs.getInt("speedAlarmThresholdKmh", 110),
-
-            rpmAlarmEnabled = prefs.getBoolean("rpmAlarmEnabled", true),
-            rpmAlarmThresholdRpm = prefs.getInt("rpmAlarmThresholdRpm", 5500),
-
-            batteryAlarmEnabled = prefs.getBoolean("batteryAlarmEnabled", true),
-            batteryAlarmThresholdV = prefs.getFloat("batteryAlarmThresholdV", 11.8f),
-
-            speedUnit = prefs.getString("speedUnit", "км/ч") ?: "км/ч",
-            tempUnit = prefs.getString("tempUnit", "°C") ?: "°C",
-            pressureUnit = prefs.getString("pressureUnit", "кПа") ?: "кПа",
-
-            keepScreenOn = prefs.getBoolean("keepScreenOn", true),
-            hudMode = prefs.getBoolean("hudMode", false),
-            deepScanAllModules = prefs.getBoolean("deepScanAllModules", false),
-            terminalAutoTranslate = prefs.getBoolean("terminalAutoTranslate", true)
-        )
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    /**
-     * Мгновенное сквозное сохранение на диск через commit() для 100% защиты от потери данных
-     */
-    fun saveSettings(settings: AppSettings) {
-        prefs.edit().apply {
-            putLong("pollingIntervalMs", settings.pollingIntervalMs)
-            putString("lastConnectedDeviceMac", settings.lastConnectedDeviceMac)
-            putInt("protocolIndex", settings.protocolIndex)
-            putBoolean("autoReconnect", settings.autoReconnect)
-            putInt("elmTimeoutMs", settings.elmTimeoutMs)
-
-            putStringSet("selectedPidHexes", settings.selectedPidHexes)
-            putString("savedChartPidHex", settings.savedChartPidHex)
-            putInt("chartVisualScheme", settings.chartVisualScheme)
-            putString("lastActiveScreenRoute", settings.lastActiveScreenRoute)
-
-            putBoolean("alarmMasterEnabled", settings.alarmMasterEnabled)
-            putInt("alarmRepeatIntervalSec", settings.alarmRepeatIntervalSec)
-
-            putBoolean("coolantAlarmEnabled", settings.coolantAlarmEnabled)
-            putInt("coolantAlarmThresholdC", settings.coolantAlarmThresholdC)
-
-            putBoolean("speedAlarmEnabled", settings.speedAlarmEnabled)
-            putInt("speedAlarmThresholdKmh", settings.speedAlarmThresholdKmh)
-
-            putBoolean("rpmAlarmEnabled", settings.rpmAlarmEnabled)
-            putInt("rpmAlarmThresholdRpm", settings.rpmAlarmThresholdRpm)
-
-            putBoolean("batteryAlarmEnabled", settings.batteryAlarmEnabled)
-            putFloat("batteryAlarmThresholdV", settings.batteryAlarmThresholdV)
-
-            putString("speedUnit", settings.speedUnit)
-            putString("tempUnit", settings.tempUnit)
-            putString("pressureUnit", settings.pressureUnit)
-
-            putBoolean("keepScreenOn", settings.keepScreenOn)
-            putBoolean("hudMode", settings.hudMode)
-            putBoolean("deepScanAllModules", settings.deepScanAllModules)
-            putBoolean("terminalAutoTranslate", settings.terminalAutoTranslate)
-            commit() // Атомарная немедленная запись
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+    buildFeatures {
+        compose = true
+    }
+}
+
+dependencies {
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.activity.compose)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.extended)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
+
+    debugImplementation(libs.androidx.ui.tooling)
+    testImplementation("junit:junit:4.13.2")
 }
