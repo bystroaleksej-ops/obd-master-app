@@ -28,6 +28,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
     val pids by viewModel.pids.collectAsState()
     val selectedPid by viewModel.chartPid.collectAsState()
     val history by viewModel.chartHistory.collectAsState()
+    val tick by viewModel.telemetryTick.collectAsState()
 
     Column(
         modifier = Modifier
@@ -94,8 +95,20 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                         color = TextSecondary,
                         fontWeight = FontWeight.Bold
                     )
+
+                    val currentValStr = if (history.isNotEmpty()) {
+                        val lastVal = history.last()
+                        when (selectedPid.unit) {
+                            "об/мин", "км/ч", "°C", "%" -> "${lastVal.toInt()} ${selectedPid.unit}"
+                            "В", "бар", "кПа" -> String.format(java.util.Locale.US, "%.2f %s", lastVal, selectedPid.unit)
+                            else -> String.format(java.util.Locale.US, "%.1f %s", lastVal, selectedPid.unit)
+                        }
+                    } else {
+                        selectedPid.formattedString
+                    }
+
                     Text(
-                        text = selectedPid.formattedString,
+                        text = currentValStr,
                         fontSize = 32.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
@@ -105,6 +118,21 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(text = "PID: 01 ${selectedPid.pidHex}", fontSize = 11.sp, color = TextMuted, fontFamily = FontFamily.Monospace)
                     Text(text = "Категория: ${selectedPid.category}", fontSize = 11.sp, color = TextSecondary)
+                    if (history.isNotEmpty()) {
+                        val min = history.minOrNull() ?: 0f
+                        val max = history.maxOrNull() ?: 0f
+                        val unit = selectedPid.unit
+                        val minMaxStr = when (unit) {
+                            "об/мин", "км/ч", "°C", "%" -> "Мин: ${min.toInt()} / Макс: ${max.toInt()}"
+                            else -> String.format(java.util.Locale.US, "Мин: %.1f / Макс: %.1f", min, max)
+                        }
+                        Text(
+                            text = minMaxStr,
+                            fontSize = 11.sp,
+                            color = TextSecondary,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             }
         }
