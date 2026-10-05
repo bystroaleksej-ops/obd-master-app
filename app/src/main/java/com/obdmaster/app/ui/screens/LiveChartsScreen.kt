@@ -33,7 +33,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
     val selectedPid by viewModel.chartPid.collectAsState()
     val history by viewModel.chartHistory.collectAsState()
     val settings by viewModel.appSettings.collectAsState()
-    val currentScheme = settings.chartVisualScheme // 0: ????, 1: ???? (????????), 2: ???????, 3: ??????
+    val currentScheme = settings.chartVisualScheme // 0: Неон, 1: Зоны (светофор), 2: Столбцы, 3: Прибор
 
     val (dispVal, dispUnit) = selectedPid.getDisplayValue(settings)
     val (dispMin, dispMax) = selectedPid.getDisplayMinMax(settings)
@@ -44,7 +44,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             .background(DarkBackground)
             .padding(16.dp)
     ) {
-        // ?????????
+        // Заголовок
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -52,13 +52,13 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
         ) {
             Column {
                 Text(
-                    text = "??????????? ? ???????",
+                    text = "ОСЦИЛЛОГРАФ И ГРАФИКИ",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
                 Text(
-                    text = "?????-????? 100% ???? . 4 ??????????? ?????",
+                    text = "Турбо-опрос 100% шины • 4 графических стиля",
                     fontSize = 11.sp,
                     color = TextSecondary
                 )
@@ -67,7 +67,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ?????????????? ????? ??????? (????? ?????? ?????????? ???????)
+        // Горизонтальный выбор датчика (опрос строго выбранного датчика)
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
@@ -92,7 +92,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // ????? ????????? ????????? ????? (??????? 1: ??????????? ??????, ???????? ???????? ??????)
+        // Холст отрисовки выбранной схемы (Вариант 1: увеличенный размер, цифровое значение внутри)
         Card(
             colors = CardDefaults.cardColors(containerColor = DarkSurface),
             shape = RoundedCornerShape(16.dp),
@@ -105,10 +105,10 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                     .fillMaxSize()
                     .padding(14.dp)
             ) {
-                // ??????? ????? ? ????????
+                // Фоновый холст с графиком
                 if (history.size < 2) {
                     Text(
-                        text = "???????? ?????? ??????...\n(???????????? ? ???? ??? ???????? ???????)",
+                        text = "Ожидание потока данных...\n(Подключитесь к авто для быстрого графика)",
                         color = TextMuted,
                         fontSize = 13.sp,
                         modifier = Modifier.align(Alignment.Center)
@@ -127,7 +127,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                     }
                 }
 
-                // ??????????????? ???????? ?????????? ?????? ???????? ???? ??????? (??????? 1)
+                // Интегрированные цифровые показатели внутри верхнего угла графика (Вариант 1)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -175,16 +175,16 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // ????????????? 4 ??????????? ?????? ?????? ??? ????? ???????
+        // Переключатель 4 графических стилей строго ПОД полем графика
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             val schemes = listOf(
-                "?? ????",
-                "?? ????????",
-                "?? ???????",
-                "?? ??????"
+                "🌊 Неон",
+                "🚥 Светофор",
+                "📊 Столбцы",
+                "⏱️ Прибор"
             )
 
             schemes.forEachIndexed { index, label ->
@@ -213,12 +213,12 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
     }
 }
 
-// 1. ?????: ?? ???????? ???????? ?? ????????? ? ????????
+// 1. Схема: 🌊 Неоновый градиент со свечением и заливкой
 private fun DrawScope.drawNeonGradientScheme(history: List<Float>, minVal: Float, maxVal: Float) {
     val width = size.width
     val height = size.height
 
-    // ?????
+    // Сетка
     for (i in 0..4) {
         val y = height * (i / 4f)
         drawLine(color = DarkBorder, start = Offset(0f, y), end = Offset(width, y), strokeWidth = 1f)
@@ -251,7 +251,7 @@ private fun DrawScope.drawNeonGradientScheme(history: List<Float>, minVal: Float
     fillPath.lineTo(lastX, height)
     fillPath.close()
 
-    // ???????? ?????????????? ??????? ??? ??????
+    // Неоновая полупрозрачная заливка под волной
     drawPath(
         path = fillPath,
         brush = Brush.verticalGradient(
@@ -261,29 +261,29 @@ private fun DrawScope.drawNeonGradientScheme(history: List<Float>, minVal: Float
         )
     )
 
-    // ???????? ???????? ????? ?????
+    // Основная неоновая линия волны
     drawPath(
         path = wavePath,
         color = CyanAccent,
         style = Stroke(width = 4.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
 
-    // ?????????? ????? ?? ???????? ????
+    // Светящаяся точка на переднем крае
     drawCircle(color = CyanAccent.copy(alpha = 0.35f), radius = 14f, center = Offset(lastX, lastY))
     drawCircle(color = Color.White, radius = 5f, center = Offset(lastX, lastY))
 }
 
-// 2. ?????: ?? ???? ???????? (????????: ??????? / ?????? / ???????)
+// 2. Схема: 🚥 Зоны нагрузки (Светофор: зеленый / желтый / красный)
 private fun DrawScope.drawTrafficLightZonesScheme(history: List<Float>, minVal: Float, maxVal: Float) {
     val width = size.width
     val height = size.height
 
-    // 3 ?????????????? ???? ???? (??????? >80%, ?????? 60-80%, ??????? <60%)
+    // 3 горизонтальные зоны фона (Красная >80%, Желтая 60-80%, Зеленая <60%)
     drawRect(color = RedError.copy(alpha = 0.12f), topLeft = Offset(0f, 0f), size = Size(width, height * 0.20f))
     drawRect(color = OrangeWarning.copy(alpha = 0.10f), topLeft = Offset(0f, height * 0.20f), size = Size(width, height * 0.20f))
     drawRect(color = GreenAccent.copy(alpha = 0.08f), topLeft = Offset(0f, height * 0.40f), size = Size(width, height * 0.60f))
 
-    // ?????????????? ????? ???
+    // Разделительные линии зон
     drawLine(color = RedError.copy(alpha = 0.5f), start = Offset(0f, height * 0.20f), end = Offset(width, height * 0.20f), strokeWidth = 1.5f)
     drawLine(color = OrangeWarning.copy(alpha = 0.5f), start = Offset(0f, height * 0.40f), end = Offset(width, height * 0.40f), strokeWidth = 1.5f)
 
@@ -309,7 +309,7 @@ private fun DrawScope.drawTrafficLightZonesScheme(history: List<Float>, minVal: 
     }
 }
 
-// 3. ?????: ?? ?????????? ?????? (??????????? / ??????????)
+// 3. Схема: 📊 Столбчатый спектр (Гистограмма / Эквалайзер)
 private fun DrawScope.drawBarSpectrumScheme(history: List<Float>, minVal: Float, maxVal: Float) {
     val width = size.width
     val height = size.height
@@ -330,7 +330,7 @@ private fun DrawScope.drawBarSpectrumScheme(history: List<Float>, minVal: Float,
             else -> CyanAccent
         }
 
-        // ???????
+        // Столбец
         drawRoundRect(
             color = barColor,
             topLeft = Offset(x, y),
@@ -338,7 +338,7 @@ private fun DrawScope.drawBarSpectrumScheme(history: List<Float>, minVal: Float,
             cornerRadius = CornerRadius(3f, 3f)
         )
 
-        // ??????? ????? ??? ????????
+        // Пиковая точка над столбцом
         val peakY = (y - 4f).coerceAtLeast(0f)
         drawRect(
             color = Color.White,
@@ -348,7 +348,7 @@ private fun DrawScope.drawBarSpectrumScheme(history: List<Float>, minVal: Float,
     }
 }
 
-// 4. ?????: ?? ?????????? ?????????? ?????? (???????? Gauge)
+// 4. Схема: ⏱️ Стрелочный спортивный прибор (Круговой Gauge)
 private fun DrawScope.drawGaugeDialScheme(
     currentVal: Float,
     minVal: Float,
@@ -362,7 +362,7 @@ private fun DrawScope.drawGaugeDialScheme(
     val startAngle = 135f
     val sweepAngle = 270f
 
-    // ??????? ????? ???? ?????
+    // Фоновая серая дуга шкалы
     drawArc(
         color = DarkBorder,
         startAngle = startAngle,
@@ -376,7 +376,7 @@ private fun DrawScope.drawGaugeDialScheme(
     val norm = ((currentVal - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
     val activeSweep = sweepAngle * norm
 
-    // ??????? ???????? ???? ?????
+    // Цветная активная дуга шкалы
     val arcColor = when {
         norm >= 0.80f -> RedError
         norm >= 0.55f -> OrangeWarning
@@ -395,7 +395,7 @@ private fun DrawScope.drawGaugeDialScheme(
         )
     }
 
-    // ??????? ???????
+    // Стрелка прибора
     val currentAngleDeg = startAngle + activeSweep
     val currentAngleRad = Math.toRadians(currentAngleDeg.toDouble())
 
@@ -411,7 +411,7 @@ private fun DrawScope.drawGaugeDialScheme(
         cap = StrokeCap.Round
     )
 
-    // ??????????? ??????? ???????
+    // Центральный кругляк стрелки
     drawCircle(color = arcColor, radius = 12f, center = center)
     drawCircle(color = DarkBackground, radius = 5f, center = center)
 }

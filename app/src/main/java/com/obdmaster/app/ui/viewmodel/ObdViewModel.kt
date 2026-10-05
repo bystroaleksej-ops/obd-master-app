@@ -1,417 +1,637 @@
-package com.obdmaster.app.ui.screens
+package com.obdmaster.app.ui.viewmodel
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import android.annotation.SuppressLint
+import android.app.Application
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.content.Context
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.obdmaster.app.core.protocol.DtcItem
+import com.obdmaster.app.core.protocol.DtcService
+import com.obdmaster.app.core.protocol.Elm327Protocol
 import com.obdmaster.app.core.protocol.ObdPid
-import com.obdmaster.app.ui.theme.*
-import com.obdmaster.app.ui.viewmodel.ObdViewModel
-import kotlin.math.cos
-import kotlin.math.sin
+import com.obdmaster.app.core.protocol.VehicleInfo
+import com.obdmaster.app.core.protocol.VehicleInfoService
+import com.obdmaster.app.core.transport.BluetoothSppTransport
+import com.obdmaster.app.core.transport.ObdTransport
+import com.obdmaster.app.core.transport.WifiTcpTransport
+import com.obdmaster.app.data.AppSettings
+import com.obdmaster.app.data.SettingsManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
+import java.util.Locale
 
-@Composable
-fun LiveChartsScreen(viewModel: ObdViewModel) {
-    val pids by viewModel.pids.collectAsState()
-    val selectedPid by viewModel.chartPid.collectAsState()
-    val history by viewModel.chartHistory.collectAsState()
-    val settings by viewModel.appSettings.collectAsState()
-    val currentScheme = settings.chartVisualScheme // 0: ????, 1: ???? (????????), 2: ???????, 3: ??????
+sealed class ConnectionStatus {
+    data object Disconnected : ConnectionStatus()
+    data class Connecting(val message: String = "Подключение...") : ConnectionStatus()
+    data class Connected(val adapterInfo: String, val protocol: String) : ConnectionStatus()
+    data class Error(val message: String) : ConnectionStatus() {
+        val error: String get() = message
+    }
+}
 
-    val (dispVal, dispUnit) = selectedPid.getDisplayValue(settings)
-    val (dispMin, dispMax) = selectedPid.getDisplayMinMax(settings)
+sealed class AutoTestUiState {
+    data object Idle : AutoTestUiState()
+    data class Running(val step: String, val progress: Float) : AutoTestUiState()
+    data class Completed(val report: com.obdmaster.app.core.protocol.AutoTestReport) : AutoTestUiState()
+}
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkBackground)
-            .padding(16.dp)
-    ) {
-        // ?????????
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "??????????? ? ???????",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
-                Text(
-                    text = "?????-????? 100% ???? . 4 ??????????? ?????",
-                    fontSize = 11.sp,
-                    color = TextSecondary
-                )
+enum class ConnectionType {
+    BLUETOOTH,
+    WIFI
+}
+
+class ObdViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val settingsManager = SettingsManager(application.applicationContext)
+
+    private val _connectionStatus = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Disconnected)
+    val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
+
+    private val _autoTestState = MutableStateFlow<AutoTestUiState>(AutoTestUiState.Idle)
+    val autoTestState: StateFlow<AutoTestUiState> = _autoTestState.asStateFlow()
+
+    private val _connectionType = MutableStateFlow(ConnectionType.BLUETOOTH)
+    val connectionType: StateFlow<ConnectionType> = _connectionType.asStateFlow()
+
+    private val _pids = MutableStateFlow(ObdPid.getAllPids())
+    val pids: StateFlow<List<ObdPid>> = _pids.asStateFlow()
+
+    private val _chartPid = MutableStateFlow<ObdPid>(_pids.value.first())
+    val chartPid: StateFlow<ObdPid> = _chartPid.asStateFlow()
+
+    private val _chartHistory = MutableStateFlow<List<Float>>(emptyList())
+    val chartHistory: StateFlow<List<Float>> = _chartHistory.asStateFlow()
+
+    private val _telemetryTick = MutableStateFlow(0L)
+    val telemetryTick: StateFlow<Long> = _telemetryTick.asStateFlow()
+
+    private val _dtcList = MutableStateFlow<List<DtcItem>>(emptyList())
+    val dtcList: StateFlow<List<DtcItem>> = _dtcList.asStateFlow()
+
+    private val _isDtcScanning = MutableStateFlow(false)
+    val isDtcScanning: StateFlow<Boolean> = _isDtcScanning.asStateFlow()
+
+    private val _vehicleInfo = MutableStateFlow(VehicleInfo())
+    val vehicleInfo: StateFlow<VehicleInfo> = _vehicleInfo.asStateFlow()
+
+    private val _terminalLogs = MutableStateFlow<List<String>>(listOf("Терминал готов к отправке команд."))
+    val terminalLogs: StateFlow<List<String>> = _terminalLogs.asStateFlow()
+
+    private val _pairedDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
+    val pairedDevices: StateFlow<List<BluetoothDevice>> = _pairedDevices.asStateFlow()
+
+    private val _appSettings = MutableStateFlow(settingsManager.loadSettings())
+    val appSettings: StateFlow<AppSettings> = _appSettings.asStateFlow()
+
+    // Отметка о том, выполнялось ли сканирование DTC
+    private val _hasPerformedDtcScan = MutableStateFlow(false)
+    val hasPerformedDtcScan: StateFlow<Boolean> = _hasPerformedDtcScan.asStateFlow()
+
+    // Активное предупреждение безопасности
+    private val _activeAlarm = MutableStateFlow<String?>(null)
+    val activeAlarm: StateFlow<String?> = _activeAlarm.asStateFlow()
+
+    private var toneGenerator: ToneGenerator? = null
+    private var lastAlarmTimestamp: Long = 0L
+
+    var currentScreenRoute: String = _appSettings.value.lastActiveScreenRoute
+        private set
+
+    private var activeTransport: ObdTransport? = null
+    private var protocol: Elm327Protocol? = null
+    private var dtcService: DtcService? = null
+    private var vehicleInfoService: VehicleInfoService? = null
+    private var pollingJob: Job? = null
+
+    init {
+        // Восстановление выбранного датчика графика из настроек
+        val savedHex = _appSettings.value.savedChartPidHex
+        _pids.value.find { it.pidHex == savedHex }?.let { pid ->
+            _chartPid.value = pid
+            val savedScheme = _appSettings.value.sensorChartSchemes[pid.pidHex]
+            if (savedScheme != null) {
+                _appSettings.value = _appSettings.value.copy(chartVisualScheme = savedScheme)
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        try {
+            toneGenerator = ToneGenerator(AudioManager.STREAM_ALARM, 85)
+        } catch (_: Exception) {}
 
-        // ?????????????? ????? ??????? (????? ?????? ?????????? ???????)
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            items(pids) { pid ->
-                val isSelected = pid.pidHex == selectedPid.pidHex
-                Surface(
-                    color = if (isSelected) CyanAccent else DarkSurface,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.clickable { viewModel.setChartPid(pid) }
-                ) {
-                    Text(
-                        text = pid.titleRu,
-                        fontSize = 12.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) DarkBackground else TextSecondary,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
-                    )
+        refreshPairedDevices()
+    }
+
+    fun updateSettings(newSettings: AppSettings) {
+        _appSettings.value = newSettings
+        settingsManager.saveSettings(newSettings)
+    }
+
+    /**
+     * Аппаратный сброс опроса и продувка буфера шины
+     */
+    private fun stopAndFlushPolling() {
+        pollingJob?.cancel()
+        pollingJob = null
+        protocol?.clearBuffer()
+    }
+
+    /**
+     * Смена экрана (таба): немедленный сброс старой очереди опроса и выбор стратегии
+     */
+    fun onScreenChanged(route: String) {
+        if (currentScreenRoute == route) return
+        stopAndFlushPolling()
+        currentScreenRoute = route
+        updateSettings(_appSettings.value.copy(lastActiveScreenRoute = route))
+
+        if (activeTransport?.isConnected == true) {
+            startPollingForCurrentScreen()
+        }
+    }
+
+    /**
+     * Запуск опроса в зависимости от активного экрана:
+     * - "charts": опрос ТОЛЬКО 1 датчика графика на 100% скорости шины.
+     * - "dashboard": опрос выбранных датчиков.
+     * - "diagnostics", "terminal", "settings": полный стоп опроса (0% загрузки, шина свободна).
+     */
+    private fun startPollingForCurrentScreen() {
+        stopAndFlushPolling()
+
+        when (currentScreenRoute) {
+            "charts" -> startTurboChartPolling()
+            "dashboard" -> startDashboardPolling()
+            else -> {
+                // На вкладках Ошибок, Терминала и Настроек опрос полностью заглушен
+                _activeAlarm.value = null
+            }
+        }
+    }
+
+    private fun startTurboChartPolling() {
+        pollingJob?.cancel()
+        pollingJob = viewModelScope.launch(Dispatchers.IO) {
+            val proto = protocol ?: return@launch
+            val targetPid = _chartPid.value
+
+            while (isActive && activeTransport?.isConnected == true) {
+                val rawResp = proto.sendCommand("01 ${targetPid.pidHex}")
+                val success = targetPid.decode(rawResp)
+                if (success) {
+                    val currentList = _chartHistory.value.toMutableList()
+                    if (currentList.size > 60) currentList.removeAt(0)
+                    currentList.add(targetPid.currentValue)
+                    _chartHistory.value = currentList
+                    _telemetryTick.value = System.nanoTime()
+
+                    checkAlarmsForPid(targetPid)
                 }
-            }
-        }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // ????? ????????? ????????? ????? (??????? 1: ??????????? ??????, ???????? ???????? ??????)
-        Card(
-            colors = CardDefaults.cardColors(containerColor = DarkSurface),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(14.dp)
-            ) {
-                // ??????? ????? ? ????????
-                if (history.size < 2) {
-                    Text(
-                        text = "???????? ?????? ??????...\n(???????????? ? ???? ??? ???????? ???????)",
-                        color = TextMuted,
-                        fontSize = 13.sp,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                val interval = _appSettings.value.pollingIntervalMs.coerceAtLeast(0L)
+                if (interval > 0L) {
+                    delay(interval)
                 } else {
-                    val minLimit = dispMin
-                    val maxLimit = if (dispMax > dispMin) dispMax else dispMin + 1f
-
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        when (currentScheme) {
-                            0 -> drawNeonGradientScheme(history, minLimit, maxLimit)
-                            1 -> drawTrafficLightZonesScheme(history, minLimit, maxLimit)
-                            2 -> drawBarSpectrumScheme(history, minLimit, maxLimit)
-                            3 -> drawGaugeDialScheme(history.last(), minLimit, maxLimit, dispVal, dispUnit)
-                        }
-                    }
-                }
-
-                // ??????????????? ???????? ?????????? ?????? ???????? ???? ??????? (??????? 1)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.TopCenter),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Column {
-                        Text(
-                            text = selectedPid.titleRu.uppercase(),
-                            fontSize = 12.sp,
-                            color = TextSecondary,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "PID: 01 ${selectedPid.pidHex}",
-                            fontSize = 10.sp,
-                            color = TextMuted,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = dispVal,
-                            fontSize = 28.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = CyanAccent
-                        )
-                        Text(
-                            text = dispUnit,
-                            fontSize = 12.sp,
-                            color = TextSecondary,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // ????????????? 4 ??????????? ?????? ?????? ??? ????? ???????
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            val schemes = listOf(
-                "?? ????",
-                "?? ????????",
-                "?? ???????",
-                "?? ??????"
-            )
-
-            schemes.forEachIndexed { index, label ->
-                val isSelected = currentScheme == index
-                Button(
-                    onClick = { viewModel.setChartVisualScheme(index) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isSelected) CyanAccent else DarkSurface
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(34.dp)
-                ) {
-                    Text(
-                        text = label,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isSelected) DarkBackground else TextSecondary,
-                        maxLines = 1
-                    )
+                    yield()
                 }
             }
         }
     }
-}
 
-// 1. ?????: ?? ???????? ???????? ?? ????????? ? ????????
-private fun DrawScope.drawNeonGradientScheme(history: List<Float>, minVal: Float, maxVal: Float) {
-    val width = size.width
-    val height = size.height
+    private fun startDashboardPolling() {
+        pollingJob?.cancel()
+        pollingJob = viewModelScope.launch(Dispatchers.IO) {
+            val proto = protocol ?: return@launch
 
-    // ?????
-    for (i in 0..4) {
-        val y = height * (i / 4f)
-        drawLine(color = DarkBorder, start = Offset(0f, y), end = Offset(width, y), strokeWidth = 1f)
+            while (isActive && activeTransport?.isConnected == true) {
+                val allPids = _pids.value
+                val selectedHexes = _appSettings.value.selectedPidHexes
+
+                val cyclePids = allPids.filter { it.isSupported && it.pidHex in selectedHexes }
+                if (cyclePids.isEmpty()) {
+                    delay(200)
+                    continue
+                }
+
+                for (pid in cyclePids) {
+                    if (!isActive) break
+                    val rawResp = proto.sendCommand("01 ${pid.pidHex}")
+                    val success = pid.decode(rawResp)
+                    if (success) {
+                        _telemetryTick.value = System.nanoTime()
+                        checkAlarmsForPid(pid)
+                    }
+                }
+
+                val interval = _appSettings.value.pollingIntervalMs.coerceAtLeast(0L)
+                if (interval > 0L) {
+                    delay(interval)
+                } else {
+                    yield()
+                }
+            }
+        }
     }
 
-    val stepX = width / (history.size - 1).coerceAtLeast(1)
-    val wavePath = Path()
-    val fillPath = Path()
+    /**
+     * Проверка порогов безопасности (строго только для тех датчиков, которые сейчас реально опрашиваются)
+     */
+    private fun checkAlarmsForPid(pid: ObdPid) {
+        val settings = _appSettings.value
+        if (!settings.alarmMasterEnabled) {
+            _activeAlarm.value = null
+            return
+        }
 
-    var lastX = 0f
-    var lastY = height
+        when (pid.pidHex) {
+            "05" -> { // ОЖ
+                if (settings.coolantAlarmEnabled && pid.currentValue >= settings.coolantAlarmThresholdC) {
+                    triggerAlarm("⚠️ ПЕРЕГРЕВ ДВИГАТЕЛЯ! ${pid.currentValue.toInt()} °C (порог ${settings.coolantAlarmThresholdC} °C)")
+                    return
+                }
+            }
+            "0D" -> { // Скорость
+                if (settings.speedAlarmEnabled && pid.currentValue >= settings.speedAlarmThresholdKmh) {
+                    triggerAlarm("⚠️ ПРЕВЫШЕНИЕ СКОРОСТИ! ${pid.currentValue.toInt()} км/ч (порог ${settings.speedAlarmThresholdKmh} км/ч)")
+                    return
+                }
+            }
+            "0C" -> { // Обороты
+                if (settings.rpmAlarmEnabled && pid.currentValue >= settings.rpmAlarmThresholdRpm) {
+                    triggerAlarm("⚠️ ОТСЕЧКА ОБОРОТОВ! ${pid.currentValue.toInt()} об/мин (порог ${settings.rpmAlarmThresholdRpm})")
+                    return
+                }
+            }
+            "42" -> { // АКБ
+                if (settings.batteryAlarmEnabled && pid.currentValue > 5f && pid.currentValue <= settings.batteryAlarmThresholdV) {
+                    val formatted = String.format(Locale.US, "%.1f", pid.currentValue)
+                    triggerAlarm("⚠️ ПРОСАДКА АКБ! $formatted В (порог ${settings.batteryAlarmThresholdV} В)")
+                    return
+                }
+            }
+        }
 
-    history.forEachIndexed { i, v ->
-        val norm = ((v - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
-        val x = i * stepX
-        val y = height - (norm * height)
+        // Если все показатели в норме
+        if (_activeAlarm.value != null && System.currentTimeMillis() - lastAlarmTimestamp > 4000L) {
+            _activeAlarm.value = null
+        }
+    }
 
-        if (i == 0) {
-            wavePath.moveTo(x, y)
-            fillPath.moveTo(x, height)
-            fillPath.lineTo(x, y)
+    private fun triggerAlarm(alertMessage: String) {
+        _activeAlarm.value = alertMessage
+        val now = System.currentTimeMillis()
+        val settings = _appSettings.value
+        if (!settings.alarmMasterEnabled) return
+
+        val repeatIntervalMs = when (settings.alarmRepeatIntervalSec) {
+            2 -> 2000L   // Турбо
+            5 -> 5000L
+            15 -> 15000L // Обычный
+            30 -> 30000L
+            60 -> 60000L
+            -1 -> Long.MAX_VALUE // Только 1 раз
+            else -> 15000L
+        }
+
+        if (now - lastAlarmTimestamp >= repeatIntervalMs) {
+            lastAlarmTimestamp = now
+            playAlarmSoundAndVibration()
+        }
+    }
+
+    private fun playAlarmSoundAndVibration() {
+        try {
+            // Звуковой зуммер
+            toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 350)
+        } catch (_: Exception) {}
+
+        try {
+            // Двойной виброотклик
+            val ctx = getApplication<Application>().applicationContext
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vm?.defaultVibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 200, 100, 200), -1))
+            } else {
+                @Suppress("DEPRECATION")
+                val v = ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 200, 100, 200), -1))
+                } else {
+                    @Suppress("DEPRECATION")
+                    v?.vibrate(300)
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun dismissActiveAlarm() {
+        _activeAlarm.value = null
+    }
+
+    fun togglePidSelection(pidHex: String) {
+        stopAndFlushPolling()
+        val current = _appSettings.value.selectedPidHexes.toMutableSet()
+        if (current.contains(pidHex)) {
+            if (current.size > 1) {
+                current.remove(pidHex)
+            }
         } else {
-            wavePath.lineTo(x, y)
-            fillPath.lineTo(x, y)
+            current.add(pidHex)
         }
-        lastX = x
-        lastY = y
-    }
-
-    fillPath.lineTo(lastX, height)
-    fillPath.close()
-
-    // ???????? ?????????????? ??????? ??? ??????
-    drawPath(
-        path = fillPath,
-        brush = Brush.verticalGradient(
-            listOf(CyanAccent.copy(alpha = 0.40f), Color.Transparent),
-            startY = 0f,
-            endY = height
-        )
-    )
-
-    // ???????? ???????? ????? ?????
-    drawPath(
-        path = wavePath,
-        color = CyanAccent,
-        style = Stroke(width = 4.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    )
-
-    // ?????????? ????? ?? ???????? ????
-    drawCircle(color = CyanAccent.copy(alpha = 0.35f), radius = 14f, center = Offset(lastX, lastY))
-    drawCircle(color = Color.White, radius = 5f, center = Offset(lastX, lastY))
-}
-
-// 2. ?????: ?? ???? ???????? (????????: ??????? / ?????? / ???????)
-private fun DrawScope.drawTrafficLightZonesScheme(history: List<Float>, minVal: Float, maxVal: Float) {
-    val width = size.width
-    val height = size.height
-
-    // 3 ?????????????? ???? ???? (??????? >80%, ?????? 60-80%, ??????? <60%)
-    drawRect(color = RedError.copy(alpha = 0.12f), topLeft = Offset(0f, 0f), size = Size(width, height * 0.20f))
-    drawRect(color = OrangeWarning.copy(alpha = 0.10f), topLeft = Offset(0f, height * 0.20f), size = Size(width, height * 0.20f))
-    drawRect(color = GreenAccent.copy(alpha = 0.08f), topLeft = Offset(0f, height * 0.40f), size = Size(width, height * 0.60f))
-
-    // ?????????????? ????? ???
-    drawLine(color = RedError.copy(alpha = 0.5f), start = Offset(0f, height * 0.20f), end = Offset(width, height * 0.20f), strokeWidth = 1.5f)
-    drawLine(color = OrangeWarning.copy(alpha = 0.5f), start = Offset(0f, height * 0.40f), end = Offset(width, height * 0.40f), strokeWidth = 1.5f)
-
-    val stepX = width / (history.size - 1).coerceAtLeast(1)
-
-    for (i in 0 until history.size - 1) {
-        val norm1 = ((history[i] - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
-        val norm2 = ((history[i + 1] - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
-
-        val x1 = i * stepX
-        val y1 = height - (norm1 * height)
-        val x2 = (i + 1) * stepX
-        val y2 = height - (norm2 * height)
-
-        val avgNorm = (norm1 + norm2) / 2f
-        val segColor = when {
-            avgNorm >= 0.80f -> RedError
-            avgNorm >= 0.60f -> OrangeWarning
-            else -> GreenAccent
+        if (_activeAlarm.value?.contains(pidHex) == true && !current.contains(pidHex)) {
+            _activeAlarm.value = null
         }
-
-        drawLine(color = segColor, start = Offset(x1, y1), end = Offset(x2, y2), strokeWidth = 4.5f, cap = StrokeCap.Round)
-    }
-}
-
-// 3. ?????: ?? ?????????? ?????? (??????????? / ??????????)
-private fun DrawScope.drawBarSpectrumScheme(history: List<Float>, minVal: Float, maxVal: Float) {
-    val width = size.width
-    val height = size.height
-
-    val count = history.size
-    val totalSlotWidth = width / count.coerceAtLeast(1)
-    val barWidth = (totalSlotWidth * 0.70f).coerceAtLeast(2f)
-
-    history.forEachIndexed { i, v ->
-        val norm = ((v - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
-        val barHeight = (norm * height).coerceAtLeast(4f)
-        val x = i * totalSlotWidth + (totalSlotWidth - barWidth) / 2f
-        val y = height - barHeight
-
-        val barColor = when {
-            norm >= 0.80f -> RedError
-            norm >= 0.55f -> OrangeWarning
-            else -> CyanAccent
+        updateSettings(_appSettings.value.copy(selectedPidHexes = current))
+        if (currentScreenRoute == "dashboard" && activeTransport?.isConnected == true) {
+            startPollingForCurrentScreen()
         }
-
-        // ???????
-        drawRoundRect(
-            color = barColor,
-            topLeft = Offset(x, y),
-            size = Size(barWidth, barHeight),
-            cornerRadius = CornerRadius(3f, 3f)
-        )
-
-        // ??????? ????? ??? ????????
-        val peakY = (y - 4f).coerceAtLeast(0f)
-        drawRect(
-            color = Color.White,
-            topLeft = Offset(x, peakY),
-            size = Size(barWidth, 2f)
-        )
-    }
-}
-
-// 4. ?????: ?? ?????????? ?????????? ?????? (???????? Gauge)
-private fun DrawScope.drawGaugeDialScheme(
-    currentVal: Float,
-    minVal: Float,
-    maxVal: Float,
-    dispVal: String,
-    dispUnit: String
-) {
-    val center = Offset(size.width / 2f, size.height * 0.52f)
-    val radius = (size.minDimension / 2f) * 0.85f
-
-    val startAngle = 135f
-    val sweepAngle = 270f
-
-    // ??????? ????? ???? ?????
-    drawArc(
-        color = DarkBorder,
-        startAngle = startAngle,
-        sweepAngle = sweepAngle,
-        useCenter = false,
-        topLeft = Offset(center.x - radius, center.y - radius),
-        size = Size(radius * 2, radius * 2),
-        style = Stroke(width = 16f, cap = StrokeCap.Round)
-    )
-
-    val norm = ((currentVal - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
-    val activeSweep = sweepAngle * norm
-
-    // ??????? ???????? ???? ?????
-    val arcColor = when {
-        norm >= 0.80f -> RedError
-        norm >= 0.55f -> OrangeWarning
-        else -> CyanAccent
     }
 
-    if (activeSweep > 0f) {
-        drawArc(
-            color = arcColor,
-            startAngle = startAngle,
-            sweepAngle = activeSweep,
-            useCenter = false,
-            topLeft = Offset(center.x - radius, center.y - radius),
-            size = Size(radius * 2, radius * 2),
-            style = Stroke(width = 16f, cap = StrokeCap.Round)
+    fun setPidSelectionPreset(presetHexes: Set<String>) {
+        stopAndFlushPolling()
+        updateSettings(_appSettings.value.copy(selectedPidHexes = presetHexes))
+        if (currentScreenRoute == "dashboard" && activeTransport?.isConnected == true) {
+            startPollingForCurrentScreen()
+        }
+    }
+
+    fun setChartPid(pid: ObdPid) {
+        stopAndFlushPolling()
+        _chartPid.value = pid
+        _chartHistory.value = emptyList()
+        _activeAlarm.value = null
+
+        // Восстановление индивидуальной схемы отображения для выбранного датчика
+        val savedScheme = _appSettings.value.sensorChartSchemes[pid.pidHex] ?: _appSettings.value.chartVisualScheme
+        updateSettings(
+            _appSettings.value.copy(
+                savedChartPidHex = pid.pidHex,
+                chartVisualScheme = savedScheme
+            )
+        )
+        if (currentScreenRoute == "charts" && activeTransport?.isConnected == true) {
+            startPollingForCurrentScreen()
+        }
+    }
+
+    fun selectChartPid(pid: ObdPid) = setChartPid(pid)
+
+    fun setChartVisualScheme(schemeIndex: Int) {
+        val currentHex = _chartPid.value.pidHex
+        val currentMap = _appSettings.value.sensorChartSchemes.toMutableMap()
+        currentMap[currentHex] = schemeIndex
+        updateSettings(
+            _appSettings.value.copy(
+                chartVisualScheme = schemeIndex,
+                sensorChartSchemes = currentMap
+            )
         )
     }
 
-    // ??????? ???????
-    val currentAngleDeg = startAngle + activeSweep
-    val currentAngleRad = Math.toRadians(currentAngleDeg.toDouble())
+    fun clearTerminalLogs() {
+        _terminalLogs.value = emptyList()
+    }
 
-    val needleLength = radius * 0.78f
-    val needleEndX = center.x + (needleLength * cos(currentAngleRad)).toFloat()
-    val needleEndY = center.y + (needleLength * sin(currentAngleRad)).toFloat()
+    fun setConnectionType(type: ConnectionType) {
+        _connectionType.value = type
+    }
 
-    drawLine(
-        color = Color.White,
-        start = center,
-        end = Offset(needleEndX, needleEndY),
-        strokeWidth = 5f,
-        cap = StrokeCap.Round
-    )
+    @SuppressLint("MissingPermission")
+    fun refreshPairedDevices() {
+        try {
+            val adapter = BluetoothAdapter.getDefaultAdapter()
+            if (adapter != null && adapter.isEnabled) {
+                _pairedDevices.value = adapter.bondedDevices.toList()
+            }
+        } catch (_: Exception) {
+            _pairedDevices.value = emptyList()
+        }
+    }
 
-    // ??????????? ??????? ???????
-    drawCircle(color = arcColor, radius = 12f, center = center)
-    drawCircle(color = DarkBackground, radius = 5f, center = center)
+    fun connectBluetooth(device: BluetoothDevice) {
+        viewModelScope.launch {
+            disconnect()
+            _connectionStatus.value = ConnectionStatus.Connecting("Подключение к ${device.name ?: device.address}...")
+            updateSettings(_appSettings.value.copy(lastConnectedDeviceMac = device.address))
+
+            val transport = BluetoothSppTransport(device)
+            activeTransport = transport
+
+            if (!transport.connect()) {
+                _connectionStatus.value = ConnectionStatus.Error("Не удалось открыть Bluetooth-сокет SPP")
+                return@launch
+            }
+
+            initializeProtocol(transport)
+        }
+    }
+
+    fun connectWifi(host: String, port: Int) {
+        viewModelScope.launch {
+            disconnect()
+            _connectionStatus.value = ConnectionStatus.Connecting("Подключение к $host:$port...")
+
+            val transport = WifiTcpTransport(host, port)
+            activeTransport = transport
+
+            if (!transport.connect()) {
+                _connectionStatus.value = ConnectionStatus.Error("Не удалось подключиться к Wi-Fi адаптеру ($host:$port)")
+                return@launch
+            }
+
+            initializeProtocol(transport)
+        }
+    }
+
+    private suspend fun initializeProtocol(transport: ObdTransport) {
+        _connectionStatus.value = ConnectionStatus.Connecting("Инициализация ELM327 и определение протокола...")
+        val proto = Elm327Protocol(transport)
+        protocol = proto
+        dtcService = DtcService(proto)
+        vehicleInfoService = VehicleInfoService(proto)
+
+        val connected = proto.initialize()
+        if (connected) {
+            _connectionStatus.value = ConnectionStatus.Connected(
+                adapterInfo = proto.batteryVoltage,
+                protocol = proto.detectedProtocol
+            )
+            appendTerminal("Подключено! Протокол: ${proto.detectedProtocol}, АКБ: ${proto.batteryVoltage}")
+            startPollingForCurrentScreen()
+            loadVehicleInfo()
+        } else {
+            _connectionStatus.value = ConnectionStatus.Error("ELM327 ответил, но связь с ЭБУ не установлена (зажигание включено?)")
+        }
+    }
+
+    fun disconnect() {
+        stopAndFlushPolling()
+        activeTransport?.disconnect()
+        activeTransport = null
+        protocol = null
+        _connectionStatus.value = ConnectionStatus.Disconnected
+        _activeAlarm.value = null
+        _hasPerformedDtcScan.value = false
+        appendTerminal("Отключено от адаптера.")
+    }
+
+    fun scanDtcs(
+        includeStored: Boolean = true,
+        includePending: Boolean = true,
+        includePermanent: Boolean = true
+    ) {
+        viewModelScope.launch {
+            val service = dtcService ?: return@launch
+            // Прерываем опрос датчиков и сбрасываем буфер шины
+            stopAndFlushPolling()
+            delay(50)
+            _isDtcScanning.value = true
+            _hasPerformedDtcScan.value = true
+            appendTerminal("Запуск сканирования DTC (03:$includeStored, 07:$includePending, 0A:$includePermanent)...")
+
+            try {
+                val list = mutableListOf<com.obdmaster.app.core.protocol.DtcItem>()
+                if (includeStored) {
+                    list.addAll(service.readStoredDtcs())
+                }
+                if (includePending) {
+                    list.addAll(service.readPendingDtcs())
+                }
+                if (includePermanent) {
+                    list.addAll(service.readPermanentDtcs())
+                }
+
+                val all = list.distinctBy { it.code }
+                _dtcList.value = all
+                appendTerminal("Сканирование завершено: найдено кодов: ${all.size}")
+            } catch (e: Exception) {
+                appendTerminal("Ошибка сканирования DTC: ${e.localizedMessage}")
+            } finally {
+                _isDtcScanning.value = false
+            }
+        }
+    }
+
+    fun clearDtcs(onCompleted: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val service = dtcService ?: return@launch
+            stopAndFlushPolling()
+            delay(50)
+            appendTerminal("Отправка команды сброса кодов ошибок (Mode 04)...")
+            val success = service.clearDtcs()
+            if (success) {
+                _dtcList.value = emptyList()
+                appendTerminal("Команда сброса выполнена успешно! Check Engine погашен.")
+            } else {
+                appendTerminal("Не удалось сбросить ошибки.")
+            }
+            onCompleted(success)
+        }
+    }
+
+    fun forceClearDtcs(onCompleted: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val service = dtcService ?: return@launch
+            stopAndFlushPolling()
+            delay(50)
+            appendTerminal("Принудительный сброс (Mode 04) без предварительного поиска...")
+            val success = service.clearDtcs()
+            if (success) {
+                _dtcList.value = emptyList()
+                appendTerminal("Принудительный сброс Mode 04 выполнен! Память ЭБУ очищена.")
+            } else {
+                appendTerminal("Не удалось выполнить принудительный сброс.")
+            }
+            onCompleted(success)
+        }
+    }
+
+    fun loadVehicleInfo() {
+        viewModelScope.launch {
+            val service = vehicleInfoService ?: return@launch
+            try {
+                val info = service.readVehicleInfo()
+                _vehicleInfo.value = info
+                appendTerminal("Данные авто загружены: VIN=${info.vin}")
+            } catch (e: Exception) {
+                appendTerminal("Не удалось прочитать VIN: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun sendTerminalCommand(cmd: String) {
+        viewModelScope.launch {
+            val proto = protocol
+            if (proto == null || activeTransport?.isConnected != true) {
+                appendTerminal("ERR: Нет активного подключения к адаптеру!")
+                return@launch
+            }
+            appendTerminal("> $cmd")
+            val resp = proto.sendCommand(cmd)
+            appendTerminal(resp)
+        }
+    }
+
+    private fun appendTerminal(msg: String) {
+        val list = _terminalLogs.value.toMutableList()
+        if (list.size > 200) list.removeAt(0)
+        list.add(msg)
+        _terminalLogs.value = list
+    }
+
+    fun runAutoTest() {
+        viewModelScope.launch {
+            val proto = protocol
+            if (proto == null || activeTransport?.isConnected != true) {
+                appendTerminal("Автотест: сначала подключитесь к адаптеру!")
+                return@launch
+            }
+            pollingJob?.cancel()
+            _autoTestState.value = AutoTestUiState.Running("Запуск экспресс-автотеста...", 0f)
+            try {
+                val report = proto.runAutoTest(_pids.value) { step, prog ->
+                    _autoTestState.value = AutoTestUiState.Running(step, prog)
+                }
+                _autoTestState.value = AutoTestUiState.Completed(report)
+                appendTerminal("Автотест: найдено ${report.supportedPidCount}/${report.totalTestedCount} датчиков, пинг: ${report.pingMs} мс")
+            } catch (e: Exception) {
+                appendTerminal("Ошибка автотеста: ${e.localizedMessage}")
+                _autoTestState.value = AutoTestUiState.Idle
+            } finally {
+                startPollingForCurrentScreen()
+            }
+        }
+    }
+
+    fun applyOptimalSensors(report: com.obdmaster.app.core.protocol.AutoTestReport) {
+        setPidSelectionPreset(report.optimalPidHexes)
+        _autoTestState.value = AutoTestUiState.Idle
+        appendTerminal("Применены оптимальные датчики (${report.optimalPidHexes.size} шт.)")
+    }
+
+    fun dismissAutoTest() {
+        _autoTestState.value = AutoTestUiState.Idle
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        try {
+            toneGenerator?.release()
+        } catch (_: Exception) {}
+        disconnect()
+    }
 }
