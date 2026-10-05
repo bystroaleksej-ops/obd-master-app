@@ -167,7 +167,7 @@ fun SettingsScreen(viewModel: ObdViewModel) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             pairedDevices.forEach { device ->
                                 val isConnected = status is ConnectionStatus.Connected &&
-                                        (status as ConnectionStatus.Connected).deviceAddress == device.address
+                                        settings.lastConnectedDeviceMac == device.address
 
                                 Surface(
                                     color = if (isConnected) CyanAccent.copy(alpha = 0.15f) else DarkCard,
@@ -177,7 +177,7 @@ fun SettingsScreen(viewModel: ObdViewModel) {
                                         .fillMaxWidth()
                                         .clickable {
                                             if (status !is ConnectionStatus.Connected) {
-                                                viewModel.connectBluetooth(device.address, device.name)
+                                                viewModel.connectBluetooth(device)
                                             }
                                         }
                                 ) {
@@ -207,7 +207,7 @@ fun SettingsScreen(viewModel: ObdViewModel) {
                                             Text("Подключено", color = CyanAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                         } else {
                                             Button(
-                                                onClick = { viewModel.connectBluetooth(device.address, device.name) },
+                                                onClick = { viewModel.connectBluetooth(device) },
                                                 colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
                                                 shape = RoundedCornerShape(6.dp),
                                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
