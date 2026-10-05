@@ -63,6 +63,9 @@ class ObdViewModel : ViewModel() {
     private val _chartHistory = MutableStateFlow<List<Float>>(emptyList())
     val chartHistory: StateFlow<List<Float>> = _chartHistory.asStateFlow()
 
+    private val _telemetryTick = MutableStateFlow(0L)
+    val telemetryTick: StateFlow<Long> = _telemetryTick.asStateFlow()
+
     private val _dtcList = MutableStateFlow<List<DtcItem>>(emptyList())
     val dtcList: StateFlow<List<DtcItem>> = _dtcList.asStateFlow()
 
@@ -231,8 +234,8 @@ class ObdViewModel : ViewModel() {
                             currentList.add(pid.currentValue)
                             _chartHistory.value = currentList
                         }
-                        // Emit new list instance immediately on every packet so UI reacts with zero lag!
-                        _pids.value = ArrayList(allPids)
+                        // Emit tick with nano timestamp so Compose recomposes with ZERO lag on EVERY packet!
+                        _telemetryTick.value = System.nanoTime()
                     }
                 }
 
