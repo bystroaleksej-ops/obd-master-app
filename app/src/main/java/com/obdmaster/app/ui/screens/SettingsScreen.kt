@@ -38,6 +38,13 @@ fun SettingsScreen(viewModel: ObdViewModel) {
     var wifiPort by remember { mutableStateOf("35000") }
     var showSensorThresholdsDialog by remember { mutableStateOf(false) }
 
+    // Автоматическое обновление списка сопряженных устройств при открытии экрана
+    LaunchedEffect(connectionType) {
+        if (connectionType == ConnectionType.BLUETOOTH) {
+            viewModel.refreshPairedDevices()
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
