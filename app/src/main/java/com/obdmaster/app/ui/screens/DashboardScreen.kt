@@ -116,7 +116,7 @@ fun DashboardScreen(viewModel: ObdViewModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(activePids, key = { it.pidHex }) { pid ->
+                items(activePids) { pid ->
                     val (dispVal, dispUnit) = pid.getDisplayValue(settings)
                     val (dispMin, dispMax) = pid.getDisplayMinMax(settings)
 
