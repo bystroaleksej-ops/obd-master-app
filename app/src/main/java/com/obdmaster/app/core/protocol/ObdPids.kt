@@ -9,14 +9,20 @@ sealed class ObdPid(
     val minVal: Float,
     val maxVal: Float
 ) {
-    var rawHex: String = ""
-        protected set
+    private val _rawHex = androidx.compose.runtime.mutableStateOf("")
+    var rawHex: String
+        get() = _rawHex.value
+        protected set(value) { _rawHex.value = value }
 
-    var currentValue: Float = 0f
-        protected set
+    private val _currentValue = androidx.compose.runtime.mutableStateOf(0f)
+    var currentValue: Float
+        get() = _currentValue.value
+        protected set(value) { _currentValue.value = value }
 
-    var formattedString: String = "-- $unit"
-        protected set
+    private val _formattedString = androidx.compose.runtime.mutableStateOf("-- $unit")
+    var formattedString: String
+        get() = _formattedString.value
+        protected set(value) { _formattedString.value = value }
 
     var isSupported: Boolean = true
     var failureCount: Int = 0

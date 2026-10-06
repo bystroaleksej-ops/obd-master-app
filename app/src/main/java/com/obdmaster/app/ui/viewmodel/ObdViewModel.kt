@@ -235,12 +235,8 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                     val rawResp = proto.sendCommand("01 ${pid.pidHex}")
                     val success = pid.decode(rawResp)
                     if (success) {
-                        // Важно: переназначаем value для вызова рекомпозиции UI у всех датчиков на Dashboard
-                        // Принудительно создаем новый список с теми же объектами, но так как Compose следит
-                        // за изменением списка, нам нужно также, чтобы сам элемент обновился, если его состояние мутирует.
-                        // В Compose state flow на список объектов со внутренними var не всегда триггерит рекомпозицию.
-                        // Простейший способ: используем telemetryTick для форсирования рекомпозиции в UI.
                         _telemetryTick.value = System.nanoTime()
+                        
                         checkAlarmsForPid(pid)
                     }
                 }

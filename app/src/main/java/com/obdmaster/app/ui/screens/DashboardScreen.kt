@@ -117,6 +117,8 @@ fun DashboardScreen(viewModel: ObdViewModel) {
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(activePids) { pid ->
+                    // Форсируем чтение tick, чтобы Compose понимал, что элемент нужно перерисовать при тике
+                    val currentTick = tick
                     val (dispVal, dispUnit) = pid.getDisplayValue(settings)
                     val (dispMin, dispMax) = pid.getDisplayMinMax(settings)
 
