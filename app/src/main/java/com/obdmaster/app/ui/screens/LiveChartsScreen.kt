@@ -15,6 +15,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
@@ -356,11 +357,83 @@ private fun DrawScope.drawGaugeDialScheme(
     dispVal: String,
     dispUnit: String
 ) {
-    val center = Offset(size.width / 2f, size.height * 0.52f)
-    val radius = (size.minDimension / 2f) * 0.85f
+    val center = Offset(size.width / 2f, size.height * 0.55f)
+    val radius = (size.minDimension / 2f) * 0.65f
 
     val startAngle = 135f
     val sweepAngle = 270f
+
+    val isRpm = maxVal > 1000f
+
+    val norm = ((currentVal - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
+    val activeSweep = sweepAngle * norm
+
+    // 1. Отрисовка текстовых делений по внешнему кругу
+    drawContext.canvas.nativeCanvas.apply {
+        val textRadius = radius + 35f
+        val ticksCount = if (isRpm) 8 else 24
+
+        val paint = android.graphics.Paint().apply {
+            textAlign = android.graphics.Paint.Align.CENTER
+            textSize = if (isRpm) 30f else 22f
+            typeface = android.graphics.Typeface.MONOSPACE
+            isFakeBoldText = true
+            isAntiAlias = true
+        }
+
+        for (i in 0..ticksCount) {
+            val tickNorm = i.toFloat() / ticksCount
+            val tickAngleDeg = startAngle + (sweepAngle * tickNorm)
+            val tickAngleRad = Math.toRadians(tickAngleDeg.toDouble())
+            val tickValue = Math.round(minVal + (maxVal - minVal) * tickNorm).toInt()
+
+            val textDist = if (isRpm) textRadius else textRadius + 4f
+            val x = center.x + (cos(tickAngleRad) * textDist).toFloat()
+            val y = center.y + (sin(tickAngleRad) * textDist).toFloat()
+            val adjustedY = y - ((paint.descent() + paint.ascent()) / 2)
+
+            paint.color = when {
+                tickNorm >= 0.8f -> android.graphics.Color.parseColor("#FF4C4C") // RedError
+                tickNorm >= 0.6f -> android.graphics.Color.parseColor("#FF9800") // OrangeWarning
+                else -> android.graphics.Color.parseColor("#666666") // TextMuted
+            }
+
+            var text = tickValue.toString()
+            var showText = true
+
+            if (isRpm) {
+                if (tickValue >= 1000) text = (tickValue / 1000).toString()
+            } else {
+                if (i % 2 != 0) showText = false
+            }
+
+            if (showText) {
+                drawText(text, x, adjustedY, paint)
+            }
+
+            // Маленькие засечки
+            val innerR = radius + 14f
+            val outerR = radius + 6f
+            val innerX = center.x + (cos(tickAngleRad) * innerR).toFloat()
+            val innerY = center.y + (sin(tickAngleRad) * innerR).toFloat()
+            val outerX = center.x + (cos(tickAngleRad) * outerR).toFloat()
+            val outerY = center.y + (sin(tickAngleRad) * outerR).toFloat()
+
+            drawLine(
+                color = Color(paint.color),
+                start = Offset(innerX, innerY),
+                end = Offset(outerX, outerY),
+                strokeWidth = 3f
+            )
+        }
+
+        if (isRpm) {
+            paint.color = android.graphics.Color.parseColor("#666666")
+            paint.textSize = 22f
+            paint.typeface = android.graphics.Typeface.SANS_SERIF
+            drawText("x1000", center.x, center.y + radius - 25f, paint)
+        }
+    }
 
     // Фоновая серая дуга шкалы
     drawArc(
@@ -372,9 +445,6 @@ private fun DrawScope.drawGaugeDialScheme(
         size = Size(radius * 2, radius * 2),
         style = Stroke(width = 16f, cap = StrokeCap.Round)
     )
-
-    val norm = ((currentVal - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
-    val activeSweep = sweepAngle * norm
 
     // Цветная активная дуга шкалы
     val arcColor = when {
@@ -399,7 +469,7 @@ private fun DrawScope.drawGaugeDialScheme(
     val currentAngleDeg = startAngle + activeSweep
     val currentAngleRad = Math.toRadians(currentAngleDeg.toDouble())
 
-    val needleLength = radius * 0.78f
+    val needleLength = radius * 0.85f
     val needleEndX = center.x + (needleLength * cos(currentAngleRad)).toFloat()
     val needleEndY = center.y + (needleLength * sin(currentAngleRad)).toFloat()
 
@@ -407,11 +477,11 @@ private fun DrawScope.drawGaugeDialScheme(
         color = Color.White,
         start = center,
         end = Offset(needleEndX, needleEndY),
-        strokeWidth = 5f,
+        strokeWidth = 6f,
         cap = StrokeCap.Round
     )
 
     // Центральный кругляк стрелки
-    drawCircle(color = arcColor, radius = 12f, center = center)
-    drawCircle(color = DarkBackground, radius = 5f, center = center)
+    drawCircle(color = arcColor, radius = 14f, center = center)
+    drawCircle(color = DarkBackground, radius = 6f, center = center)
 }
