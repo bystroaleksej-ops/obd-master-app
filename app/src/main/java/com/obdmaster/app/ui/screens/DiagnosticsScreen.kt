@@ -1,4 +1,4 @@
-﻿package com.obdmaster.app.ui.screens
+﻿﻿package com.obdmaster.app.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
@@ -204,7 +204,7 @@ fun DiagnosticsScreen(viewModel: ObdViewModel) {
         Spacer(modifier = Modifier.height(10.dp))
 
         // 2. Главные кнопки: Сканировать и Сбросить найденные
-        val canClearFound = isScanning == false && hasScanned && dtcs.isNotEmpty()
+        val canClearFound = !isScanning && hasScanned && dtcs.isNotEmpty()
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -212,7 +212,7 @@ fun DiagnosticsScreen(viewModel: ObdViewModel) {
         ) {
             Button(
                 onClick = { viewModel.scanDtcs() },
-                enabled = isScanning == false,
+                enabled = !isScanning,
                 colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = DarkBackground),
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.weight(1f)
@@ -298,7 +298,7 @@ fun DiagnosticsScreen(viewModel: ObdViewModel) {
 
                 Button(
                     onClick = { showForceClearDialog = true },
-                    enabled = isScanning == false,
+                    enabled = !isScanning,
                     colors = ButtonDefaults.buttonColors(containerColor = RedError, contentColor = TextPrimary),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
