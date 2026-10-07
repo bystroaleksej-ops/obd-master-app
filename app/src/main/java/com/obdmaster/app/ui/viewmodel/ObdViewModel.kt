@@ -297,7 +297,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private fun playAlarmSoundAndVibration() {
         try {
             // Звуковой зуммер
-            toneGenerator?.startTone(ToneGenerator.TONE_CDMA_ALERT_AUTOTEXT, 350)
+            toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 350)
         } catch (_: Exception) {}
 
         try {
