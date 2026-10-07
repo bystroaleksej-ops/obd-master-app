@@ -1,4 +1,4 @@
-package com.obdmaster.app.ui.viewmodel
+﻿package com.obdmaster.app.ui.viewmodel
 
 import android.annotation.SuppressLint
 import android.app.Application
@@ -98,10 +98,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private val _appSettings = MutableStateFlow(settingsManager.loadSettings())
     val appSettings: StateFlow<AppSettings> = _appSettings.asStateFlow()
 
-    // Отметка о том, выполнялось ли сканирование DTC
-    private val _hasPerformedDtcScan = MutableStateFlow(false)
-    val hasPerformedDtcScan: StateFlow<Boolean> = _hasPerformedDtcScan.asStateFlow()
-
     // Активное предупреждение безопасности
     private val _activeAlarm = MutableStateFlow<String?>(null)
     val activeAlarm: StateFlow<String?> = _activeAlarm.asStateFlow()
@@ -121,13 +117,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     init {
         // Восстановление выбранного датчика графика из настроек
         val savedHex = _appSettings.value.savedChartPidHex
-        _pids.value.find { it.pidHex == savedHex }?.let { pid ->
-            _chartPid.value = pid
-            val savedScheme = _appSettings.value.sensorChartSchemes[pid.pidHex]
-            if (savedScheme != null) {
-                _appSettings.value = _appSettings.value.copy(chartVisualScheme = savedScheme)
-            }
-        }
+        _pids.value.find { it.pidHex == savedHex }?.let { _chartPid.value = it }
 
         try {
             toneGenerator = ToneGenerator(AudioManager.STREAM_ALARM, 85)
@@ -142,20 +132,10 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Аппаратный сброс опроса и продувка буфера шины
-     */
-    private fun stopAndFlushPolling() {
-        pollingJob?.cancel()
-        pollingJob = null
-        protocol?.clearBuffer()
-    }
-
-    /**
      * Смена экрана (таба): немедленный сброс старой очереди опроса и выбор стратегии
      */
     fun onScreenChanged(route: String) {
         if (currentScreenRoute == route) return
-        stopAndFlushPolling()
         currentScreenRoute = route
         updateSettings(_appSettings.value.copy(lastActiveScreenRoute = route))
 
@@ -171,7 +151,8 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
      * - "diagnostics", "terminal", "settings": полный стоп опроса (0% загрузки, шина свободна).
      */
     private fun startPollingForCurrentScreen() {
-        stopAndFlushPolling()
+        pollingJob?.cancel()
+        pollingJob = null
 
         when (currentScreenRoute) {
             "charts" -> startTurboChartPolling()
@@ -193,9 +174,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                 val rawResp = proto.sendCommand("01 ${targetPid.pidHex}")
                 val success = targetPid.decode(rawResp)
                 if (success) {
-                    // Принудительно вызываем обновление StateFlow, т.к. мы меняем внутреннее состояние объекта ObdPid
-                    _chartPid.value = targetPid
-
                     val currentList = _chartHistory.value.toMutableList()
                     if (currentList.size > 60) currentList.removeAt(0)
                     currentList.add(targetPid.currentValue)
@@ -236,7 +214,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                     val success = pid.decode(rawResp)
                     if (success) {
                         _telemetryTick.value = System.nanoTime()
-                        
                         checkAlarmsForPid(pid)
                     }
                 }
@@ -320,7 +297,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private fun playAlarmSoundAndVibration() {
         try {
             // Звуковой зуммер
-            toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 350)
+            toneGenerator?.startTone(ToneGenerator.TONE_CDMA_ALERT_AUTIAL_LOUD, 350)
         } catch (_: Exception) {}
 
         try {
@@ -347,7 +324,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun togglePidSelection(pidHex: String) {
-        stopAndFlushPolling()
         val current = _appSettings.value.selectedPidHexes.toMutableSet()
         if (current.contains(pidHex)) {
             if (current.size > 1) {
@@ -356,9 +332,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             current.add(pidHex)
         }
-        if (_activeAlarm.value?.contains(pidHex) == true && !current.contains(pidHex)) {
-            _activeAlarm.value = null
-        }
         updateSettings(_appSettings.value.copy(selectedPidHexes = current))
         if (currentScreenRoute == "dashboard" && activeTransport?.isConnected == true) {
             startPollingForCurrentScreen()
@@ -366,7 +339,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setPidSelectionPreset(presetHexes: Set<String>) {
-        stopAndFlushPolling()
         updateSettings(_appSettings.value.copy(selectedPidHexes = presetHexes))
         if (currentScreenRoute == "dashboard" && activeTransport?.isConnected == true) {
             startPollingForCurrentScreen()
@@ -374,19 +346,9 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setChartPid(pid: ObdPid) {
-        stopAndFlushPolling()
         _chartPid.value = pid
         _chartHistory.value = emptyList()
-        _activeAlarm.value = null
-
-        // Восстановление индивидуальной схемы отображения для выбранного датчика
-        val savedScheme = _appSettings.value.sensorChartSchemes[pid.pidHex] ?: _appSettings.value.chartVisualScheme
-        updateSettings(
-            _appSettings.value.copy(
-                savedChartPidHex = pid.pidHex,
-                chartVisualScheme = savedScheme
-            )
-        )
+        updateSettings(_appSettings.value.copy(savedChartPidHex = pid.pidHex))
         if (currentScreenRoute == "charts" && activeTransport?.isConnected == true) {
             startPollingForCurrentScreen()
         }
@@ -394,17 +356,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectChartPid(pid: ObdPid) = setChartPid(pid)
 
-    fun setChartVisualScheme(schemeIndex: Int) {
-        val currentHex = _chartPid.value.pidHex
-        val currentMap = _appSettings.value.sensorChartSchemes.toMutableMap()
-        currentMap[currentHex] = schemeIndex
-        updateSettings(
-            _appSettings.value.copy(
-                chartVisualScheme = schemeIndex,
-                sensorChartSchemes = currentMap
-            )
-        )
-    }
+    
 
     fun clearTerminalLogs() {
         _terminalLogs.value = emptyList()
@@ -483,45 +435,32 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun disconnect() {
-        stopAndFlushPolling()
+        pollingJob?.cancel()
+        pollingJob = null
         activeTransport?.disconnect()
         activeTransport = null
         protocol = null
         _connectionStatus.value = ConnectionStatus.Disconnected
         _activeAlarm.value = null
-        _hasPerformedDtcScan.value = false
         appendTerminal("Отключено от адаптера.")
     }
 
-    fun scanDtcs(
-        includeStored: Boolean = true,
-        includePending: Boolean = true,
-        includePermanent: Boolean = true
-    ) {
+    fun scanDtcs() {
         viewModelScope.launch {
             val service = dtcService ?: return@launch
-            // Прерываем опрос датчиков и сбрасываем буфер шины
-            stopAndFlushPolling()
-            delay(50)
+            // Прерываем опрос датчиков, чтобы шина была на 100% свободна для чтения ошибок!
+            pollingJob?.cancel()
             _isDtcScanning.value = true
-            _hasPerformedDtcScan.value = true
-            appendTerminal("Запуск сканирования DTC (03:$includeStored, 07:$includePending, 0A:$includePermanent)...")
+            appendTerminal("Запуск сканирования кодов ошибок DTC...")
 
             try {
-                val list = mutableListOf<com.obdmaster.app.core.protocol.DtcItem>()
-                if (includeStored) {
-                    list.addAll(service.readStoredDtcs())
-                }
-                if (includePending) {
-                    list.addAll(service.readPendingDtcs())
-                }
-                if (includePermanent) {
-                    list.addAll(service.readPermanentDtcs())
-                }
+                val stored = service.readStoredDtcs()
+                val pending = service.readPendingDtcs()
+                val permanent = service.readPermanentDtcs()
 
-                val all = list.distinctBy { it.code }
+                val all = (stored + pending + permanent).distinctBy { it.code }
                 _dtcList.value = all
-                appendTerminal("Сканирование завершено: найдено кодов: ${all.size}")
+                appendTerminal("Сканирование завершено: найдено ошибок: ${all.size}")
             } catch (e: Exception) {
                 appendTerminal("Ошибка сканирования DTC: ${e.localizedMessage}")
             } finally {
@@ -533,8 +472,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     fun clearDtcs(onCompleted: (Boolean) -> Unit) {
         viewModelScope.launch {
             val service = dtcService ?: return@launch
-            stopAndFlushPolling()
-            delay(50)
+            pollingJob?.cancel()
             appendTerminal("Отправка команды сброса кодов ошибок (Mode 04)...")
             val success = service.clearDtcs()
             if (success) {
@@ -542,23 +480,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                 appendTerminal("Команда сброса выполнена успешно! Check Engine погашен.")
             } else {
                 appendTerminal("Не удалось сбросить ошибки.")
-            }
-            onCompleted(success)
-        }
-    }
-
-    fun forceClearDtcs(onCompleted: (Boolean) -> Unit) {
-        viewModelScope.launch {
-            val service = dtcService ?: return@launch
-            stopAndFlushPolling()
-            delay(50)
-            appendTerminal("Принудительный сброс (Mode 04) без предварительного поиска...")
-            val success = service.clearDtcs()
-            if (success) {
-                _dtcList.value = emptyList()
-                appendTerminal("Принудительный сброс Mode 04 выполнен! Память ЭБУ очищена.")
-            } else {
-                appendTerminal("Не удалось выполнить принудительный сброс.")
             }
             onCompleted(success)
         }
@@ -639,3 +560,4 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         disconnect()
     }
 }
+

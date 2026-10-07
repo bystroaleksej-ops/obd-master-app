@@ -16,8 +16,7 @@ data class AppSettings(
     // 2. Active Sensors & Charts
     val selectedPidHexes: Set<String> = setOf("0C", "0D", "05", "04", "11", "42"),
     val savedChartPidHex: String = "0C", // Запомненный датчик на вкладке графиков
-    val chartVisualScheme: Int = 0, // Дефолтная схема
-    val sensorGaugeSettings: Map<String, SensorGaugeSettings> = emptyMap(),
+    val chartVisualScheme: Int = 0, // 0: Неон, 1: Зоны (светофор), 2: Столбцы, 3: Прибор
     val lastActiveScreenRoute: String = "dashboard", // Запоминание последней открытой вкладки
 
     // 3. Alerts & Engine Protection
@@ -62,7 +61,6 @@ class SettingsManager(context: Context) {
             selectedPidHexes = prefs.getStringSet("selectedPidHexes", setOf("0C", "0D", "05", "04", "11", "42")) ?: setOf("0C", "0D", "05", "04", "11", "42"),
             savedChartPidHex = prefs.getString("savedChartPidHex", "0C") ?: "0C",
             chartVisualScheme = prefs.getInt("chartVisualScheme", 0),
-            sensorGaugeSettings = parseGaugeSettings(prefs.getString("sensorGaugeSettings", "")),
             lastActiveScreenRoute = prefs.getString("lastActiveScreenRoute", "dashboard") ?: "dashboard",
 
             alarmMasterEnabled = prefs.getBoolean("alarmMasterEnabled", true),
@@ -105,7 +103,6 @@ class SettingsManager(context: Context) {
             putStringSet("selectedPidHexes", settings.selectedPidHexes)
             putString("savedChartPidHex", settings.savedChartPidHex)
             putInt("chartVisualScheme", settings.chartVisualScheme)
-            putString("sensorGaugeSettings", formatGaugeSettings(settings.sensorGaugeSettings))
             putString("lastActiveScreenRoute", settings.lastActiveScreenRoute)
 
             putBoolean("alarmMasterEnabled", settings.alarmMasterEnabled)
@@ -133,28 +130,6 @@ class SettingsManager(context: Context) {
             putBoolean("terminalAutoTranslate", settings.terminalAutoTranslate)
             commit() // Атомарная немедленная запись
         }
-    }
-
-        private fun parseGaugeSettings(raw: String?): Map<String, SensorGaugeSettings> {
-        if (raw.isNullOrBlank()) return emptyMap()
-        return raw.split(";").mapNotNull { entry ->
-            val parts = entry.split(":")
-            if (parts.size == 2) {
-                val hex = parts[0].trim()
-                val vals = parts[1].trim().split(",")
-                if (hex.isNotEmpty() && vals.size == 3) {
-                    val min = vals[0].toFloatOrNull() ?: 0f
-                    val max = vals[1].toFloatOrNull() ?: 100f
-                    val step = vals[2].toFloatOrNull() ?: 10f
-                    hex to SensorGaugeSettings(min, max, step)
-                } else null
-            } else null
-        }.toMap()
-    }
-
-    private fun formatGaugeSettings(map: Map<String, SensorGaugeSettings>): String {
-        return map.entries.joinToString(";") { "${it.key}:,," }
-    }:${it.value}" }
     }
 }
 
