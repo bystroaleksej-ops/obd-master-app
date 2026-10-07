@@ -235,7 +235,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                                 }
                                 val newMap = settings.sensorGaugeSettings.toMutableMap()
                                 newMap[selectedPid.pidHex] = com.obdmaster.app.data.SensorGaugeSettings(minVal, maxVal, stepVal)
-                                viewModel.settingsManager.saveSettings(settings.copy(sensorGaugeSettings = newMap))
+                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap))
                             },
                             valueRange = dispMin..(if (dispMax > dispMin) dispMax * 2f else 10000f),
                             steps = 100,
@@ -249,7 +249,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                                 stepVal = it
                                 val newMap = settings.sensorGaugeSettings.toMutableMap()
                                 newMap[selectedPid.pidHex] = com.obdmaster.app.data.SensorGaugeSettings(minVal, maxVal, stepVal)
-                                viewModel.settingsManager.saveSettings(settings.copy(sensorGaugeSettings = newMap))
+                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap))
                             },
                             valueRange = 1f..(maxVal - minVal).coerceAtLeast(10f),
                             steps = 100,
@@ -516,7 +516,7 @@ private fun DrawScope.drawGaugeDialScheme(
     if (normVal > 0f) {
         val sweep = sweepAngle * normVal
         val brush = androidx.compose.ui.graphics.Brush.linearGradient(
-            colors = listOf(CyanAccent, androidx.compose.ui.graphics.Color(0xFFFF9800), ErrorRed),
+            colors = listOf(CyanAccent, androidx.compose.ui.graphics.Color(0xFFFF9800), androidx.compose.ui.graphics.Color(0xFFFF4C4C)),
             start = Offset(0f, 0f),
             end = Offset(size.width, 0f)
         )
