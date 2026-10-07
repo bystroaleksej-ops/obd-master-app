@@ -1,4 +1,4 @@
-﻿package com.obdmaster.app.ui.screens
+package com.obdmaster.app.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
