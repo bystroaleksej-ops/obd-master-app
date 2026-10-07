@@ -1,4 +1,4 @@
-package com.obdmaster.app.ui.screens
+﻿package com.obdmaster.app.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -11,7 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
@@ -20,7 +19,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.sp\
+import androidx.compose.material3.Slider\
+import androidx.compose.material3.RangeSlider\
+import androidx.compose.material3.IconButton\
+import androidx.compose.material.icons.Icons\
+import androidx.compose.material.icons.filled.Settings\
+import androidx.compose.material3.Icon\
 import com.obdmaster.app.core.protocol.ObdPid
 import com.obdmaster.app.ui.theme.*
 import com.obdmaster.app.ui.viewmodel.ObdViewModel
@@ -37,6 +42,9 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
 
     val (dispVal, dispUnit) = selectedPid.getDisplayValue(settings)
     val (dispMin, dispMax) = selectedPid.getDisplayMinMax(settings)
+    var showSettings by remember { mutableStateOf(false) }\
+    var showSettings by remember { mutableStateOf(false) }\
+
 
     Column(
         modifier = Modifier
@@ -150,21 +158,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                         color = TextSecondary,
                         fontWeight = FontWeight.Bold
                     )
-                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = dispVal,
-                            fontSize = 28.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = CyanAccent
-                        )
-                        Text(
-                            text = dispUnit,
-                            fontSize = 13.sp,
-                            color = TextMuted,
-                            modifier = Modifier.padding(bottom = 3.dp)
-                        )
-                    }
+                    
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
@@ -214,12 +208,15 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                     val maxLimit = if (dispMax > dispMin) dispMax else dispMin + 1f
 
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        when (currentScheme) {
-                            0 -> drawNeonGradientScheme(history, minLimit, maxLimit)
-                            1 -> drawTrafficLightZonesScheme(history, minLimit, maxLimit)
-                            2 -> drawBarSpectrumScheme(history, minLimit, maxLimit)
-                            3 -> drawGaugeDialScheme(history.last(), minLimit, maxLimit, dispVal, dispUnit)
-                        }
+                        val sensorSet = settings.sensorGaugeSettings[selectedPid.pidHex]\
+                        val drawMin = sensorSet?.minVal ?: minLimit\
+                        val drawMax = sensorSet?.maxVal ?: maxLimit\
+                        val drawStep = sensorSet?.stepVal ?: ((drawMax - drawMin) / 10f)\
+                        val sensorSet = settings.sensorGaugeSettings[selectedPid.pidHex]
+                        val drawMin = sensorSet?.minVal ?: dispMin
+                        val drawMax = sensorSet?.maxVal ?: (if (dispMax > dispMin) dispMax else dispMin + 1f)
+                        val drawStep = sensorSet?.stepVal ?: ((drawMax - drawMin) / 10f).coerceAtLeast(1f)
+                        drawGaugeDialScheme(history.last(), drawMin, drawMax, drawStep, dispVal, dispUnit)
                     }
                 }
             }
@@ -367,6 +364,7 @@ private fun DrawScope.drawGaugeDialScheme(
     currentVal: Float,
     minVal: Float,
     maxVal: Float,
+    stepVal: Float,
     dispVal: String,
     dispUnit: String
 ) {
@@ -376,26 +374,186 @@ private fun DrawScope.drawGaugeDialScheme(
     val startAngle = 135f
     val sweepAngle = 270f
 
-    // Фоновая серая дуга шкалы
+    // 1. Background arc
     drawArc(
         color = DarkBorder,
         startAngle = startAngle,
         sweepAngle = sweepAngle,
         useCenter = false,
         topLeft = Offset(center.x - radius, center.y - radius),
-        size = Size(radius * 2, radius * 2),
-        style = Stroke(width = 16f, cap = StrokeCap.Round)
+        size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 16.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
     )
 
-    val norm = ((currentVal - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
-    val activeSweep = sweepAngle * norm
+    val totalRange = if (maxVal > minVal) maxVal - minVal else 1f
+    var safeStep = if (stepVal > 0) stepVal else 1f
+    if (totalRange / safeStep > 100) safeStep = totalRange / 100f
+    val numTicks = (totalRange / safeStep).toInt()
 
-    // Цветная активная дуга шкалы
-    val arcColor = when {
-        norm >= 0.80f -> RedError
-        norm >= 0.55f -> OrangeWarning
-        else -> CyanAccent
+    drawContext.canvas.nativeCanvas.apply {
+        val paint = android.graphics.Paint().apply {
+            textSize = 14.sp.toPx()
+            typeface = android.graphics.Typeface.MONOSPACE
+            isFakeBoldText = true
+            textAlign = android.graphics.Paint.Align.CENTER
+            color = android.graphics.Color.GRAY
+            isAntiAlias = true
+        }
+
+        // Sub-ticks
+        if (numTicks <= 20) {
+            val subTicksPerSegment = 5
+            for (i in 0..numTicks * subTicksPerSegment) {
+                if (i % subTicksPerSegment == 0) continue
+                val tickVal = minVal + (i * (safeStep / subTicksPerSegment))
+                val norm = (tickVal - minVal) / totalRange
+                if (norm > 1f) continue
+
+                val angleDeg = startAngle + (sweepAngle * norm)
+                val angleRad = Math.toRadians(angleDeg.toDouble())
+                
+                var tColor = android.graphics.Color.DKGRAY
+                if (norm >= 0.8f) tColor = android.graphics.Color.argb(128, 255, 76, 76)
+                else if (norm >= 0.6f) tColor = android.graphics.Color.argb(128, 255, 152, 0)
+                
+                val p1 = Offset(
+                    (center.x + Math.cos(angleRad) * (radius + 8.dp.toPx())).toFloat(),
+                    (center.y + Math.sin(angleRad) * (radius + 8.dp.toPx())).toFloat()
+                )
+                val p2 = Offset(
+                    (center.x + Math.cos(angleRad) * (radius - 2.dp.toPx())).toFloat(),
+                    (center.y + Math.sin(angleRad) * (radius - 2.dp.toPx())).toFloat()
+                )
+                drawLine(
+                    color = androidx.compose.ui.graphics.Color(tColor),
+                    start = p1,
+                    end = p2,
+                    strokeWidth = 2.dp.toPx()
+                )
+            }
+        }
+
+        // Main ticks and numbers
+        for (i in 0..numTicks) {
+            val tickVal = minVal + (i * safeStep)
+            val norm = (tickVal - minVal) / totalRange
+            if (norm > 1f) continue
+
+            val angleDeg = startAngle + (sweepAngle * norm)
+            val angleRad = Math.toRadians(angleDeg.toDouble())
+
+            var tColor = android.graphics.Color.GRAY
+            if (norm >= 0.8f) tColor = android.graphics.Color.parseColor("#FF4C4C")
+            else if (norm >= 0.6f) tColor = android.graphics.Color.parseColor("#FF9800")
+
+            // Tick line
+            val p1 = Offset(
+                (center.x + Math.cos(angleRad) * (radius + 12.dp.toPx())).toFloat(),
+                (center.y + Math.sin(angleRad) * (radius + 12.dp.toPx())).toFloat()
+            )
+            val p2 = Offset(
+                (center.x + Math.cos(angleRad) * (radius - 2.dp.toPx())).toFloat(),
+                (center.y + Math.sin(angleRad) * (radius - 2.dp.toPx())).toFloat()
+            )
+            drawLine(
+                color = androidx.compose.ui.graphics.Color(tColor),
+                start = p1,
+                end = p2,
+                strokeWidth = 4.dp.toPx()
+            )
+
+            // Tick Text
+            val textRadius = radius + 28.dp.toPx()
+            val tx = (center.x + Math.cos(angleRad) * textRadius).toFloat()
+            val ty = (center.y + Math.sin(angleRad) * textRadius).toFloat()
+
+            paint.color = tColor
+            var textStr = Math.round(tickVal).toString()
+            if (dispUnit.contains("RPM", ignoreCase=true) && tickVal >= 1000) {
+                textStr = (tickVal / 1000).toInt().toString()
+            } else if (dispUnit.contains("RPM", ignoreCase=true) && tickVal == 0f) {
+                textStr = "0"
+            }
+            // Vertical align adjust
+            drawText(textStr, tx, ty + (paint.textSize / 3f), paint)
+        }
     }
+
+    // 2. Value Arc (Gradient)
+    val normVal = ((currentVal - minVal) / totalRange).coerceIn(0f, 1f)
+    if (normVal > 0f) {
+        val sweep = sweepAngle * normVal
+        val brush = androidx.compose.ui.graphics.Brush.linearGradient(
+            colors = listOf(CyanAccent, androidx.compose.ui.graphics.Color(0xFFFF9800), ErrorRed),
+            start = Offset(0f, 0f),
+            end = Offset(size.width, 0f)
+        )
+        drawArc(
+            brush = brush,
+            startAngle = startAngle,
+            sweepAngle = sweep,
+            useCenter = false,
+            topLeft = Offset(center.x - radius, center.y - radius),
+            size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 16.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        )
+    }
+
+    // 3. Needle
+    val needleAngle = startAngle + (sweepAngle * normVal)
+    val needleRad = Math.toRadians(needleAngle.toDouble())
+    val needleEnd = Offset(
+        (center.x + Math.cos(needleRad) * (radius * 0.95f)).toFloat(),
+        (center.y + Math.sin(needleRad) * (radius * 0.95f)).toFloat()
+    )
+    drawLine(
+        color = androidx.compose.ui.graphics.Color.White,
+        start = center,
+        end = needleEnd,
+        strokeWidth = 3.dp.toPx(),
+        cap = androidx.compose.ui.graphics.StrokeCap.Round
+    )
+
+    // Center Cap
+    drawCircle(
+        color = CyanAccent,
+        radius = 8.dp.toPx(),
+        center = center
+    )
+    drawCircle(
+        color = androidx.compose.ui.graphics.Color.Black,
+        radius = 8.dp.toPx(),
+        center = center,
+        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+    )
+
+    // 4. Center Texts (Value and Unit)
+    drawContext.canvas.nativeCanvas.apply {
+        val paintVal = android.graphics.Paint().apply {
+            textSize = 48.sp.toPx()
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            textAlign = android.graphics.Paint.Align.CENTER
+            color = android.graphics.Color.WHITE
+            isAntiAlias = true
+            setShadowLayer(10f, 0f, 0f, android.graphics.Color.argb(100, 255, 255, 255))
+        }
+        val paintUnit = android.graphics.Paint().apply {
+            textSize = 16.sp.toPx()
+            typeface = android.graphics.Typeface.DEFAULT
+            textAlign = android.graphics.Paint.Align.CENTER
+            color = android.graphics.Color.LTGRAY
+            isAntiAlias = true
+        }
+
+        var unitText = dispUnit
+        if (dispUnit.contains("RPM", ignoreCase=true)) {
+            unitText = "RPM (x1000)"
+        }
+
+        drawText(dispVal, center.x, center.y + radius * 0.6f, paintVal)
+        drawText(unitText, center.x, center.y + radius * 0.85f, paintUnit)
+    }
+}
 
     if (activeSweep > 0f) {
         drawArc(
@@ -429,3 +587,8 @@ private fun DrawScope.drawGaugeDialScheme(
     drawCircle(color = arcColor, radius = 12f, center = center)
     drawCircle(color = DarkBackground, radius = 5f, center = center)
 }
+
+
+
+
+
