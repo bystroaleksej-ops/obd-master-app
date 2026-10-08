@@ -231,9 +231,8 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             }
         }
     }
-}
 
-// 1. Схема: 🌊 Неоновый градиент со свечением и заливкой
+
 
 private fun DrawScope.drawGaugeDialScheme(
     currentVal: Float,
@@ -418,3 +417,5 @@ private fun DrawScope.drawGaugeDialScheme(
         drawText(dispVal, center.x, center.y + radius * 0.6f, paintVal)
         drawText(unitText, center.x, center.y + radius * 0.85f, paintUnit)
     }
+
+}
