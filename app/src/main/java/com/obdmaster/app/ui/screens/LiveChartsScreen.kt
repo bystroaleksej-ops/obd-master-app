@@ -76,7 +76,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp)).toFloat()
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Горизонтальный выбор датчика (опрос строго выбранного датчика)
         LazyRow(
@@ -101,7 +101,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp)).toFloat()
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Переключатель 4 графических стилей
         Row(
@@ -139,7 +139,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp)).toFloat()
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Карточка текущих показаний
         Card(
@@ -170,7 +170,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                         color = TextMuted,
                         fontFamily = FontFamily.Monospace
                     )
-                    if (history.isNotEmpty()).toFloat() {
+                    if (history.isNotEmpty()) {
                         val min = history.minOrNull() ?: 0f
                         val max = history.maxOrNull() ?: 0f
                         Text(
@@ -184,7 +184,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp)).toFloat()
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Холст отрисовки выбранной схемы
         Card(
@@ -210,7 +210,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                     val minLimit = dispMin
                     val maxLimit = if (dispMax > dispMin) dispMax else dispMin + 1f
 
-                    Canvas(modifier = Modifier.fillMaxSize()).toFloat() {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
                         
                     val sensorSet = settings.sensorGaugeSettings[selectedPid.pidHex]
                     val drawMin = sensorSet?.minVal ?: dispMin
@@ -223,10 +223,10 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                 if (showSettings) {
                     val sensorSet = settings.sensorGaugeSettings[selectedPid.pidHex]
                     var minVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.minVal ?: dispMin) }
-                    var maxVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.maxVal ?: (if (dispMax > dispMin) dispMax else dispMin + 100f)).toFloat() }
-                    var stepVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.stepVal ?: ((maxVal - minVal) / 10f).coerceAtLeast(1f)).toFloat() }
+                    var maxVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.maxVal ?: (if (dispMax > dispMin) dispMax else dispMin + 100f)) }
+                    var stepVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.stepVal ?: ((maxVal - minVal) / 10f).coerceAtLeast(1f)) }
 
-                    Column(modifier = Modifier.fillMaxWidth().background(DarkCard).padding(16.dp)).toFloat() {
+                    Column(modifier = Modifier.fillMaxWidth().background(DarkCard).padding(16.dp)) {
                         Text(text = "Диапазон:  - ", color = TextPrimary, fontSize = 14.sp)
                         RangeSlider(
                             value = minVal..maxVal,
@@ -238,13 +238,13 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                                 }
                                 val newMap = settings.sensorGaugeSettings.toMutableMap()
                                 newMap[selectedPid.pidHex] = com.obdmaster.app.data.SensorGaugeSettings(minVal, maxVal, stepVal)
-                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap)).toFloat()
+                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap))
                             },
                             valueRange = dispMin..(if (dispMax > dispMin) dispMax * 2f else 10000f),
                             steps = 100,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Spacer(modifier = Modifier.height(8.dp)).toFloat()
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(text = "Шаг делений: ", color = TextPrimary, fontSize = 14.sp)
                         Slider(
                             value = stepVal,
@@ -252,7 +252,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                                 stepVal = it
                                 val newMap = settings.sensorGaugeSettings.toMutableMap()
                                 newMap[selectedPid.pidHex] = com.obdmaster.app.data.SensorGaugeSettings(minVal, maxVal, stepVal)
-                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap)).toFloat()
+                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap))
                             },
                             valueRange = 1f..(maxVal - minVal).coerceAtLeast(10f),
                             steps = 100,
@@ -269,7 +269,6 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
 }
 
 // 1. Схема: 🌊 Неоновый градиент со свечением и заливкой
-
 
 private fun DrawScope.drawGaugeDialScheme(
     currentVal: Float,
