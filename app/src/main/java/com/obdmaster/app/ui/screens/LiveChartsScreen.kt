@@ -12,7 +12,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -31,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.nativeCanvas
 import com.obdmaster.app.core.protocol.ObdPid
 import com.obdmaster.app.ui.theme.*
 import com.obdmaster.app.ui.viewmodel.ObdViewModel
@@ -38,11 +38,13 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
+fun LiveChartsScreen(viewModel: ObdViewModel) {
     val pids by viewModel.pids.collectAsState()
     val selectedPid by viewModel.chartPid.collectAsState()
     val history by viewModel.chartHistory.collectAsState()
     val settings by viewModel.appSettings.collectAsState()
-    
+     // 0: Неон, 1: Зоны (светофор), 2: Столбцы, 3: Прибор
+
     val (dispVal, dispUnit) = selectedPid.getDisplayValue(settings)
     val (dispMin, dispMax) = selectedPid.getDisplayMinMax(settings)
     var showSettings by remember { mutableStateOf(false) }
@@ -52,11 +54,13 @@ import kotlin.math.sin
             .fillMaxSize()
             .background(DarkBackground)
             .padding(16.dp)
+    ) {
         // Заголовок
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
+        ) {
             Column {
                 Text(
                     text = "ОСЦИЛЛОГРАФ И ГРАФИКИ",
@@ -78,11 +82,14 @@ import kotlin.math.sin
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
+        ) {
+            items(pids) { pid ->
                 val isSelected = pid.pidHex == selectedPid.pidHex
                 Surface(
                     color = if (isSelected) CyanAccent else DarkSurface,
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.clickable { viewModel.setChartPid(pid) }
+                ) {
                     Text(
                         text = pid.titleRu,
                         fontSize = 12.sp,
@@ -100,6 +107,7 @@ import kotlin.math.sin
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             val schemes = listOf(
                 "🌊 Неон",
                 "🚥 Светофор",
@@ -108,6 +116,10 @@ import kotlin.math.sin
             )
 
             schemes.forEachIndexed { index, label ->
+                val isSelected = currentScheme == index
+                Button(
+                    onClick = { viewModel.setChartVisualScheme(index) },
+                    colors = ButtonDefaults.buttonColors(
                         containerColor = if (isSelected) CyanAccent else DarkSurface
                     ),
                     shape = RoundedCornerShape(8.dp),
@@ -115,6 +127,7 @@ import kotlin.math.sin
                     modifier = Modifier
                         .weight(1f)
                         .height(34.dp)
+                ) {
                     Text(
                         text = label,
                         fontSize = 10.sp,
@@ -133,12 +146,14 @@ import kotlin.math.sin
             colors = CardDefaults.cardColors(containerColor = DarkSurface),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth()
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
+            ) {
                 Column {
                     Text(
                         text = selectedPid.titleRu.uppercase(),
@@ -146,13 +161,16 @@ import kotlin.math.sin
                         color = TextSecondary,
                         fontWeight = FontWeight.Bold
                     )
+                    IconButton(onClick = { showSettings = !showSettings }) { Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings", tint = TextPrimary) }
                 }
+                Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = "PID: 01 ${selectedPid.pidHex}",
                         fontSize = 11.sp,
                         color = TextMuted,
                         fontFamily = FontFamily.Monospace
                     )
+                    if (history.isNotEmpty()) {
                         val min = history.minOrNull() ?: 0f
                         val max = history.maxOrNull() ?: 0f
                         Text(
@@ -175,10 +193,13 @@ import kotlin.math.sin
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(14.dp)
+            ) {
+                if (history.size < 2) {
                     Text(
                         text = "Ожидание потока данных...\n(Подключитесь к авто для быстрого графика)",
                         color = TextMuted,
@@ -189,6 +210,7 @@ import kotlin.math.sin
                     val minLimit = dispMin
                     val maxLimit = if (dispMax > dispMin) dispMax else dispMin + 1f
 
+                    Canvas(modifier = Modifier.fillMaxSize()) {
                         
                     val sensorSet = settings.sensorGaugeSettings[selectedPid.pidHex]
                     val drawMin = sensorSet?.minVal ?: dispMin
@@ -198,15 +220,20 @@ import kotlin.math.sin
                     drawGaugeDialScheme(history.last(), drawMin, drawMax, drawStep, dispVal, dispUnit)
                 }
 
-                // Settings Panel
+                if (showSettings) {
                     val sensorSet = settings.sensorGaugeSettings[selectedPid.pidHex]
+                    var minVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.minVal ?: dispMin) }
+                    var maxVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.maxVal ?: (if (dispMax > dispMin) dispMax else dispMin + 100f)) }
+                    var stepVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.stepVal ?: ((maxVal - minVal) / 10f).coerceAtLeast(1f)) }
 
+                    Column(modifier = Modifier.fillMaxWidth().background(DarkCard).padding(16.dp)) {
                         Text(text = "Диапазон:  - ", color = TextPrimary, fontSize = 14.sp)
                         RangeSlider(
                             value = minVal..maxVal,
                             onValueChange = { range ->
                                 minVal = range.start
                                 maxVal = range.endInclusive
+                                if (maxVal - minVal < stepVal) {
                                     stepVal = ((maxVal - minVal) / 2f).coerceAtLeast(1f)
                                 }
                                 val newMap = settings.sensorGaugeSettings.toMutableMap()
@@ -232,6 +259,7 @@ import kotlin.math.sin
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
+                }
 
                     }
                 }
@@ -241,135 +269,6 @@ import kotlin.math.sin
 }
 
 // 1. Схема: 🌊 Неоновый градиент со свечением и заливкой
-    val width = size.width
-    val height = size.height
-
-    // Сетка
-        val y = height * (i / 4f)
-        drawLine(color = DarkBorder, start = Offset(0f, y), end = Offset(width, y), strokeWidth = 1f)
-    }
-
-    val stepX = width / (history.size - 1).coerceAtLeast(1)
-    val wavePath = Path()
-    val fillPath = Path()
-
-    var lastX = 0f
-    var lastY = height
-
-    history.forEachIndexed { i, v ->
-        val norm = ((v - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
-        val x = i * stepX
-        val y = height - (norm * height)
-
-            wavePath.moveTo(x, y)
-            fillPath.moveTo(x, height)
-            fillPath.lineTo(x, y)
-        } else {
-            wavePath.lineTo(x, y)
-            fillPath.lineTo(x, y)
-        }
-        lastX = x
-        lastY = y
-    }
-
-    fillPath.lineTo(lastX, height)
-    fillPath.close()
-
-    // Неоновая полупрозрачная заливка под волной
-    drawPath(
-        path = fillPath,
-        brush = Brush.verticalGradient(
-            listOf(CyanAccent.copy(alpha = 0.40f), Color.Transparent),
-            startY = 0f,
-            endY = height
-        )
-    )
-
-    // Основная неоновая линия волны
-    drawPath(
-        path = wavePath,
-        color = CyanAccent,
-        style = Stroke(width = 4.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    )
-
-    // Светящаяся точка на переднем крае
-    drawCircle(color = CyanAccent.copy(alpha = 0.35f), radius = 14f, center = Offset(lastX, lastY))
-    drawCircle(color = Color.White, radius = 5f, center = Offset(lastX, lastY))
-}
-
-// 2. Схема: 🚥 Зоны нагрузки (Светофор: зеленый / желтый / красный)
-    val width = size.width
-    val height = size.height
-
-    // 3 горизонтальные зоны фона (Красная >80%, Желтая 60-80%, Зеленая <60%)
-    drawRect(color = RedError.copy(alpha = 0.12f), topLeft = Offset(0f, 0f), size = Size(width, height * 0.20f))
-    drawRect(color = OrangeWarning.copy(alpha = 0.10f), topLeft = Offset(0f, height * 0.20f), size = Size(width, height * 0.20f))
-    drawRect(color = GreenAccent.copy(alpha = 0.08f), topLeft = Offset(0f, height * 0.40f), size = Size(width, height * 0.60f))
-
-    // Разделительные линии зон
-    drawLine(color = RedError.copy(alpha = 0.5f), start = Offset(0f, height * 0.20f), end = Offset(width, height * 0.20f), strokeWidth = 1.5f)
-    drawLine(color = OrangeWarning.copy(alpha = 0.5f), start = Offset(0f, height * 0.40f), end = Offset(width, height * 0.40f), strokeWidth = 1.5f)
-
-    val stepX = width / (history.size - 1).coerceAtLeast(1)
-
-        val norm1 = ((history[i] - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
-        val norm2 = ((history[i + 1] - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
-
-        val x1 = i * stepX
-        val y1 = height - (norm1 * height)
-        val x2 = (i + 1) * stepX
-        val y2 = height - (norm2 * height)
-
-        val avgNorm = (norm1 + norm2) / 2f
-        val segColor = when {
-            avgNorm >= 0.80f -> RedError
-            avgNorm >= 0.60f -> OrangeWarning
-            else -> GreenAccent
-        }
-
-        drawLine(color = segColor, start = Offset(x1, y1), end = Offset(x2, y2), strokeWidth = 4.5f, cap = StrokeCap.Round)
-    }
-}
-
-// 3. Схема: 📊 Столбчатый спектр (Гистограмма / Эквалайзер)
-    val width = size.width
-    val height = size.height
-
-    val count = history.size
-    val totalSlotWidth = width / count.coerceAtLeast(1)
-    val barWidth = (totalSlotWidth * 0.70f).coerceAtLeast(2f)
-
-    history.forEachIndexed { i, v ->
-        val norm = ((v - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
-        val barHeight = (norm * height).coerceAtLeast(4f)
-        val x = i * totalSlotWidth + (totalSlotWidth - barWidth) / 2f
-        val y = height - barHeight
-
-        val barColor = when {
-            norm >= 0.80f -> RedError
-            norm >= 0.55f -> OrangeWarning
-            else -> CyanAccent
-        }
-
-        // Столбец
-        drawRoundRect(
-            color = barColor,
-            topLeft = Offset(x, y),
-            size = Size(barWidth, barHeight),
-            cornerRadius = CornerRadius(3f, 3f)
-        )
-
-        // Пиковая точка над столбцом
-        val peakY = (y - 4f).coerceAtLeast(0f)
-        drawRect(
-            color = Color.White,
-            topLeft = Offset(x, peakY),
-            size = Size(barWidth, 2f)
-        )
-    }
-}
-
-// 4. Схема: ⏱️ Стрелочный спортивный прибор (Круговой Gauge)
 
 private fun DrawScope.drawGaugeDialScheme(
     currentVal: Float,
@@ -378,6 +277,7 @@ private fun DrawScope.drawGaugeDialScheme(
     stepVal: Float,
     dispVal: String,
     dispUnit: String
+) {
     val center = Offset(size.width / 2f, size.height * 0.52f)
     val radius = (size.minDimension / 2f) * 0.85f
 
@@ -409,7 +309,9 @@ private fun DrawScope.drawGaugeDialScheme(
             isAntiAlias = true
         }
 
+        if (numTicks <= 20) {
             val subTicksPerSegment = 5
+            for (i in 0..numTicks * subTicksPerSegment) {
                 if (i % subTicksPerSegment == 0) continue
                 val tickVal = minVal + (i * (safeStep / subTicksPerSegment))
                 val norm = (tickVal - minVal) / totalRange
@@ -423,12 +325,12 @@ private fun DrawScope.drawGaugeDialScheme(
                 else if (norm >= 0.6f) tColor = android.graphics.Color.argb(128, 255, 152, 0)
                 
                 val p1 = Offset(
-                    (center.x + Math.cos(angleRad) * (radius + 8.dp.toPx())).toFloat(),
-                    (center.y + Math.sin(angleRad) * (radius + 8.dp.toPx())).toFloat()
+                    (float)(center.x + Math.cos(angleRad) * (radius + 8.dp.toPx())),
+                    (float)(center.y + Math.sin(angleRad) * (radius + 8.dp.toPx()))
                 )
                 val p2 = Offset(
-                    (center.x + Math.cos(angleRad) * (radius - 2.dp.toPx())).toFloat(),
-                    (center.y + Math.sin(angleRad) * (radius - 2.dp.toPx())).toFloat()
+                    (float)(center.x + Math.cos(angleRad) * (radius - 2.dp.toPx())),
+                    (float)(center.y + Math.sin(angleRad) * (radius - 2.dp.toPx()))
                 )
                 drawLine(
                     color = androidx.compose.ui.graphics.Color(tColor),
@@ -439,6 +341,7 @@ private fun DrawScope.drawGaugeDialScheme(
             }
         }
 
+        for (i in 0..numTicks) {
             val tickVal = minVal + (i * safeStep)
             val norm = (tickVal - minVal) / totalRange
             if (norm > 1f) continue
@@ -451,12 +354,12 @@ private fun DrawScope.drawGaugeDialScheme(
             else if (norm >= 0.6f) tColor = android.graphics.Color.parseColor("#FF9800")
 
             val p1 = Offset(
-                (center.x + Math.cos(angleRad) * (radius + 12.dp.toPx())).toFloat(),
-                (center.y + Math.sin(angleRad) * (radius + 12.dp.toPx())).toFloat()
+                (float)(center.x + Math.cos(angleRad) * (radius + 12.dp.toPx())),
+                (float)(center.y + Math.sin(angleRad) * (radius + 12.dp.toPx()))
             )
             val p2 = Offset(
-                (center.x + Math.cos(angleRad) * (radius - 2.dp.toPx())).toFloat(),
-                (center.y + Math.sin(angleRad) * (radius - 2.dp.toPx())).toFloat()
+                (float)(center.x + Math.cos(angleRad) * (radius - 2.dp.toPx())),
+                (float)(center.y + Math.sin(angleRad) * (radius - 2.dp.toPx()))
             )
             drawLine(
                 color = androidx.compose.ui.graphics.Color(tColor),
@@ -466,12 +369,14 @@ private fun DrawScope.drawGaugeDialScheme(
             )
 
             val textRadius = radius + 28.dp.toPx()
-            val tx = (center.x + Math.cos(angleRad) * textRadius).toFloat()
-            val ty = (center.y + Math.sin(angleRad) * textRadius).toFloat()
+            val tx = (float)(center.x + Math.cos(angleRad) * textRadius)
+            val ty = (float)(center.y + Math.sin(angleRad) * textRadius)
 
             paint.color = tColor
             var textStr = Math.round(tickVal).toString()
-                textStr = (tickVal / 1000).toInt().toString()
+            if (dispUnit.contains("RPM") && tickVal >= 1000) {
+                textStr = (tickVal / 1000).ToString()
+            } else if (dispUnit.contains("RPM") && tickVal == 0f) {
                 textStr = "0"
             }
             drawText(textStr, tx, ty + (paint.textSize / 3f), paint)
@@ -479,6 +384,7 @@ private fun DrawScope.drawGaugeDialScheme(
     }
 
     val normVal = ((currentVal - minVal) / totalRange).coerceIn(0f, 1f)
+    if (normVal > 0f) {
         val sweep = sweepAngle * normVal
         val brush = androidx.compose.ui.graphics.Brush.linearGradient(
             colors = listOf(CyanAccent, androidx.compose.ui.graphics.Color(0xFFFF9800), androidx.compose.ui.graphics.Color(0xFFFF4C4C)),
@@ -499,8 +405,8 @@ private fun DrawScope.drawGaugeDialScheme(
     val needleAngle = startAngle + (sweepAngle * normVal)
     val needleRad = Math.toRadians(needleAngle.toDouble())
     val needleEnd = Offset(
-        (center.x + Math.cos(needleRad) * (radius * 0.95f)).toFloat(),
-        (center.y + Math.sin(needleRad) * (radius * 0.95f)).toFloat()
+        (float)(center.x + Math.cos(needleRad) * (radius * 0.95f)),
+        (float)(center.y + Math.sin(needleRad) * (radius * 0.95f))
     )
     drawLine(
         color = androidx.compose.ui.graphics.Color.White,
@@ -540,10 +446,13 @@ private fun DrawScope.drawGaugeDialScheme(
         }
 
         var unitText = dispUnit
+        if (dispUnit.contains("RPM")) {
             unitText = "RPM (x1000)"
         }
 
         drawText(dispVal, center.x, center.y + radius * 0.6f, paintVal)
         drawText(unitText, center.x, center.y + radius * 0.85f, paintUnit)
     }
+}
+
 }
