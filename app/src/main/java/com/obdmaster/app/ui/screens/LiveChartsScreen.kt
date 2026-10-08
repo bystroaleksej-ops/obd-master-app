@@ -283,19 +283,19 @@ private fun DrawScope.drawGaugeDialScheme(
                 if (norm > 1f) continue
 
                 val angleDeg = startAngle + (sweepAngle * norm)
-                val angleRad = Math.toRadians(angleDeg.toDouble()).toFloat()
+                val angleRad = (angleDeg * kotlin.math.PI / 180f).toFloat()
                 
                 var tColor = android.graphics.Color.DKGRAY
                 if (norm >= 0.8f) tColor = android.graphics.Color.argb(128, 255, 76, 76)
                 else if (norm >= 0.6f) tColor = android.graphics.Color.argb(128, 255, 152, 0)
                 
                 val p1 = Offset(
-                    (center.x + Math.cos(angleRad).toFloat() * (radius + 8.dp.toPx()).toFloat()),
-                    (center.y + Math.sin(angleRad).toFloat() * (radius + 8.dp.toPx()).toFloat())
+                    (center.x + kotlin.math.cos(angleRad) * (radius + 8.dp.toPx())),
+                    (center.y + kotlin.math.sin(angleRad) * (radius + 8.dp.toPx()))
                 )
                 val p2 = Offset(
-                    (center.x + Math.cos(angleRad).toFloat() * (radius - 2.dp.toPx()).toFloat()),
-                    (center.y + Math.sin(angleRad).toFloat() * (radius - 2.dp.toPx()).toFloat())
+                    (center.x + kotlin.math.cos(angleRad) * (radius - 2.dp.toPx())),
+                    (center.y + kotlin.math.sin(angleRad) * (radius - 2.dp.toPx()))
                 )
                 drawLine(
                     color = androidx.compose.ui.graphics.Color(tColor),
@@ -312,19 +312,19 @@ private fun DrawScope.drawGaugeDialScheme(
             if (norm > 1f) continue
 
             val angleDeg = startAngle + (sweepAngle * norm)
-            val angleRad = Math.toRadians(angleDeg.toDouble()).toFloat()
+            val angleRad = (angleDeg * kotlin.math.PI / 180f).toFloat()
 
             var tColor = android.graphics.Color.GRAY
             if (norm >= 0.8f) tColor = android.graphics.Color.parseColor("#FF4C4C")
             else if (norm >= 0.6f) tColor = android.graphics.Color.parseColor("#FF9800")
 
             val p1 = Offset(
-                (center.x + Math.cos(angleRad).toFloat() * (radius + 12.dp.toPx()).toFloat()),
-                (center.y + Math.sin(angleRad).toFloat() * (radius + 12.dp.toPx()).toFloat())
+                (center.x + kotlin.math.cos(angleRad) * (radius + 12.dp.toPx())),
+                (center.y + kotlin.math.sin(angleRad) * (radius + 12.dp.toPx()))
             )
             val p2 = Offset(
-                (center.x + Math.cos(angleRad).toFloat() * (radius - 2.dp.toPx()).toFloat()),
-                (center.y + Math.sin(angleRad).toFloat() * (radius - 2.dp.toPx()).toFloat())
+                (center.x + kotlin.math.cos(angleRad) * (radius - 2.dp.toPx())),
+                (center.y + kotlin.math.sin(angleRad) * (radius - 2.dp.toPx()))
             )
             drawLine(
                 color = androidx.compose.ui.graphics.Color(tColor),
@@ -334,11 +334,11 @@ private fun DrawScope.drawGaugeDialScheme(
             )
 
             val textRadius = radius + 28.dp.toPx()
-            val tx = (center.x + Math.cos(angleRad).toFloat() * textRadius)
-            val ty = (center.y + Math.sin(angleRad).toFloat() * textRadius)
+            val tx = (center.x + kotlin.math.cos(angleRad) * textRadius)
+            val ty = (center.y + kotlin.math.sin(angleRad) * textRadius)
 
             paint.color = tColor
-            var textStr = Math.round(tickVal).toString()
+            var textStr = kotlin.math.round(tickVal).toInt().toString()
             if (dispUnit.contains("RPM") && tickVal >= 1000) {
                 textStr = (tickVal / 1000).toInt().toString();
             } else if (dispUnit.contains("RPM") && tickVal == 0f) {
@@ -368,10 +368,10 @@ private fun DrawScope.drawGaugeDialScheme(
     }
 
     val needleAngle = startAngle + (sweepAngle * normVal)
-    val needleRad = Math.toRadians(needleAngle.toDouble()).toFloat()
+    val needleRad = (needleAngle * kotlin.math.PI / 180f).toFloat()
     val needleEnd = Offset(
-        (center.x + Math.cos(needleRad).toFloat() * (radius * 0.95f)).toFloat(),
-        (center.y + Math.sin(needleRad).toFloat() * (radius * 0.95f)).toFloat()
+        (center.x + kotlin.math.cos(needleRad) * (radius * 0.95f),
+        (center.y + kotlin.math.sin(needleRad) * (radius * 0.95f)
     )
     drawLine(
         color = androidx.compose.ui.graphics.Color.White,
@@ -390,7 +390,7 @@ private fun DrawScope.drawGaugeDialScheme(
         color = androidx.compose.ui.graphics.Color.Black,
         radius = 8.dp.toPx(),
         center = center,
-        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()).toFloat()
+        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
     )
 
     drawContext.canvas.nativeCanvas.apply {
