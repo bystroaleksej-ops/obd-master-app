@@ -76,7 +76,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp)).toFloat()
 
         // Горизонтальный выбор датчика (опрос строго выбранного датчика)
         LazyRow(
@@ -101,43 +101,10 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp)).toFloat()
 
         // Переключатель 4 графических стилей
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            val schemes = listOf(
-                "🌊 Неон",
-                "🚥 Светофор",
-                "📊 Столбцы",
-                "⏱️ Прибор"
-            )
-
-            schemes.forEachIndexed { index, label ->
-                Button(
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isSelected) CyanAccent else DarkSurface
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(34.dp)
-                ) {
-                    Text(
-                        text = label,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isSelected) DarkBackground else TextSecondary,
-                        maxLines = 1
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
+        
 
         // Карточка текущих показаний
         Card(
@@ -168,7 +135,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                         color = TextMuted,
                         fontFamily = FontFamily.Monospace
                     )
-                    if (history.isNotEmpty()) {
+                    if (history.isNotEmpty()).toFloat() {
                         val min = history.minOrNull() ?: 0f
                         val max = history.maxOrNull() ?: 0f
                         Text(
@@ -182,7 +149,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp)).toFloat()
 
         // Холст отрисовки выбранной схемы
         Card(
@@ -208,7 +175,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                     val minLimit = dispMin
                     val maxLimit = if (dispMax > dispMin) dispMax else dispMin + 1f
 
-                    Canvas(modifier = Modifier.fillMaxSize()) {
+                    Canvas(modifier = Modifier.fillMaxSize()).toFloat() {
                         
                     val sensorSet = settings.sensorGaugeSettings[selectedPid.pidHex]
                     val drawMin = sensorSet?.minVal ?: dispMin
@@ -221,10 +188,10 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                 if (showSettings) {
                     val sensorSet = settings.sensorGaugeSettings[selectedPid.pidHex]
                     var minVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.minVal ?: dispMin) }
-                    var maxVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.maxVal ?: (if (dispMax > dispMin) dispMax else dispMin + 100f)) }
-                    var stepVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.stepVal ?: ((maxVal - minVal) / 10f).coerceAtLeast(1f)) }
+                    var maxVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.maxVal ?: (if (dispMax > dispMin) dispMax else dispMin + 100f)).toFloat() }
+                    var stepVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.stepVal ?: ((maxVal - minVal) / 10f).coerceAtLeast(1f)).toFloat() }
 
-                    Column(modifier = Modifier.fillMaxWidth().background(DarkCard).padding(16.dp)) {
+                    Column(modifier = Modifier.fillMaxWidth().background(DarkCard).padding(16.dp)).toFloat() {
                         Text(text = "Диапазон:  - ", color = TextPrimary, fontSize = 14.sp)
                         RangeSlider(
                             value = minVal..maxVal,
@@ -236,13 +203,13 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                                 }
                                 val newMap = settings.sensorGaugeSettings.toMutableMap()
                                 newMap[selectedPid.pidHex] = com.obdmaster.app.data.SensorGaugeSettings(minVal, maxVal, stepVal)
-                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap))
+                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap)).toFloat()
                             },
                             valueRange = dispMin..(if (dispMax > dispMin) dispMax * 2f else 10000f),
                             steps = 100,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(8.dp)).toFloat()
                         Text(text = "Шаг делений: ", color = TextPrimary, fontSize = 14.sp)
                         Slider(
                             value = stepVal,
@@ -250,7 +217,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                                 stepVal = it
                                 val newMap = settings.sensorGaugeSettings.toMutableMap()
                                 newMap[selectedPid.pidHex] = com.obdmaster.app.data.SensorGaugeSettings(minVal, maxVal, stepVal)
-                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap))
+                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap)).toFloat()
                             },
                             valueRange = 1f..(maxVal - minVal).coerceAtLeast(10f),
                             steps = 100,
@@ -267,7 +234,6 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
 }
 
 // 1. Схема: 🌊 Неоновый градиент со свечением и заливкой
-
 
 private fun DrawScope.drawGaugeDialScheme(
     currentVal: Float,
@@ -312,24 +278,24 @@ private fun DrawScope.drawGaugeDialScheme(
             val subTicksPerSegment = 5
             for (i in 0..numTicks * subTicksPerSegment) {
                 if (i % subTicksPerSegment == 0) continue
-                val tickVal = minVal + (i * (safeStep / subTicksPerSegment))
+                val tickVal = minVal + (i * (safeStep / subTicksPerSegment)).toFloat()
                 val norm = (tickVal - minVal) / totalRange
                 if (norm > 1f) continue
 
                 val angleDeg = startAngle + (sweepAngle * norm)
-                val angleRad = Math.toRadians(angleDeg.toDouble())
+                val angleRad = Math.toRadians(angleDeg.toDouble()).toFloat()
                 
                 var tColor = android.graphics.Color.DKGRAY
                 if (norm >= 0.8f) tColor = android.graphics.Color.argb(128, 255, 76, 76)
                 else if (norm >= 0.6f) tColor = android.graphics.Color.argb(128, 255, 152, 0)
                 
                 val p1 = Offset(
-                    (center.x + Math.cos(angleRad) * (radius + 8.dp.toPx())).toFloat(),
-                    (center.y + Math.sin(angleRad) * (radius + 8.dp.toPx())).toFloat()
+                    (center.x + Math.cos(angleRad) * (radius + 8.dp.toPx()).toFloat()),
+                    (center.y + Math.sin(angleRad) * (radius + 8.dp.toPx()).toFloat())
                 )
                 val p2 = Offset(
-                    (center.x + Math.cos(angleRad) * (radius - 2.dp.toPx())).toFloat(),
-                    (center.y + Math.sin(angleRad) * (radius - 2.dp.toPx())).toFloat()
+                    (center.x + Math.cos(angleRad) * (radius - 2.dp.toPx()).toFloat()),
+                    (center.y + Math.sin(angleRad) * (radius - 2.dp.toPx()).toFloat())
                 )
                 drawLine(
                     color = androidx.compose.ui.graphics.Color(tColor),
@@ -346,19 +312,19 @@ private fun DrawScope.drawGaugeDialScheme(
             if (norm > 1f) continue
 
             val angleDeg = startAngle + (sweepAngle * norm)
-            val angleRad = Math.toRadians(angleDeg.toDouble())
+            val angleRad = Math.toRadians(angleDeg.toDouble()).toFloat()
 
             var tColor = android.graphics.Color.GRAY
             if (norm >= 0.8f) tColor = android.graphics.Color.parseColor("#FF4C4C")
             else if (norm >= 0.6f) tColor = android.graphics.Color.parseColor("#FF9800")
 
             val p1 = Offset(
-                (center.x + Math.cos(angleRad) * (radius + 12.dp.toPx())).toFloat(),
-                (center.y + Math.sin(angleRad) * (radius + 12.dp.toPx())).toFloat()
+                (center.x + Math.cos(angleRad) * (radius + 12.dp.toPx()).toFloat()),
+                (center.y + Math.sin(angleRad) * (radius + 12.dp.toPx()).toFloat())
             )
             val p2 = Offset(
-                (center.x + Math.cos(angleRad) * (radius - 2.dp.toPx())).toFloat(),
-                (center.y + Math.sin(angleRad) * (radius - 2.dp.toPx())).toFloat()
+                (center.x + Math.cos(angleRad) * (radius - 2.dp.toPx()).toFloat()),
+                (center.y + Math.sin(angleRad) * (radius - 2.dp.toPx()).toFloat())
             )
             drawLine(
                 color = androidx.compose.ui.graphics.Color(tColor),
@@ -368,15 +334,15 @@ private fun DrawScope.drawGaugeDialScheme(
             )
 
             val textRadius = radius + 28.dp.toPx()
-            val tx = (center.x + Math.cos(angleRad) * textRadius).toFloat()
-            val ty = (center.y + Math.sin(angleRad) * textRadius).toFloat()
+            val tx = (center.x + Math.cos(angleRad) * textRadius)
+            val ty = (center.y + Math.sin(angleRad) * textRadius)
 
             paint.color = tColor
             var textStr = Math.round(tickVal).toString()
             if (dispUnit.contains("RPM") && tickVal >= 1000) {
-                textStr = (tickVal / 1000).toInt().toString()
+                textStr = (tickVal / 1000).toInt().toString();
             } else if (dispUnit.contains("RPM") && tickVal == 0f) {
-                textStr = "0"
+                textStr = "0";
             }
             drawText(textStr, tx, ty + (paint.textSize / 3f), paint)
         }
@@ -386,7 +352,7 @@ private fun DrawScope.drawGaugeDialScheme(
     if (normVal > 0f) {
         val sweep = sweepAngle * normVal
         val brush = androidx.compose.ui.graphics.Brush.linearGradient(
-            colors = listOf(CyanAccent, androidx.compose.ui.graphics.Color(0xFFFF9800), androidx.compose.ui.graphics.Color(0xFFFF4C4C)),
+            colors = listOf(CyanAccent, androidx.compose.ui.graphics.Color(0xFFFF9800), androidx.compose.ui.graphics.Color(0xFFFF4C4C)).toFloat(),
             start = Offset(0f, 0f),
             end = Offset(size.width, 0f)
         )
@@ -402,7 +368,7 @@ private fun DrawScope.drawGaugeDialScheme(
     }
 
     val needleAngle = startAngle + (sweepAngle * normVal)
-    val needleRad = Math.toRadians(needleAngle.toDouble())
+    val needleRad = Math.toRadians(needleAngle.toDouble()).toFloat()
     val needleEnd = Offset(
         (center.x + Math.cos(needleRad) * (radius * 0.95f)).toFloat(),
         (center.y + Math.sin(needleRad) * (radius * 0.95f)).toFloat()
@@ -424,7 +390,7 @@ private fun DrawScope.drawGaugeDialScheme(
         color = androidx.compose.ui.graphics.Color.Black,
         radius = 8.dp.toPx(),
         center = center,
-        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()).toFloat()
     )
 
     drawContext.canvas.nativeCanvas.apply {
@@ -434,7 +400,7 @@ private fun DrawScope.drawGaugeDialScheme(
             textAlign = android.graphics.Paint.Align.CENTER
             color = android.graphics.Color.WHITE
             isAntiAlias = true
-            setShadowLayer(10f, 0f, 0f, android.graphics.Color.argb(100, 255, 255, 255))
+            setShadowLayer(10f, 0f, 0f, android.graphics.Color.argb(100, 255, 255, 255)).toFloat()
         }
         val paintUnit = android.graphics.Paint().apply {
             textSize = 16.sp.toPx()
@@ -445,7 +411,7 @@ private fun DrawScope.drawGaugeDialScheme(
         }
 
         var unitText = dispUnit
-        if (dispUnit.contains("RPM")) {
+        if (dispUnit.contains("RPM")).toFloat() {
             unitText = "RPM (x1000)"
         }
 
