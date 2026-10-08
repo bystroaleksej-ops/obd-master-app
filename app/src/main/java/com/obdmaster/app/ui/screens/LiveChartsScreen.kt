@@ -290,12 +290,12 @@ private fun DrawScope.drawGaugeDialScheme(
                 else if (norm >= 0.6f) tColor = android.graphics.Color.argb(128, 255, 152, 0)
                 
                 val p1 = Offset(
-                    (center.x + Math.cos(angleRad) * (radius + 8.dp.toPx()).toFloat()),
-                    (center.y + Math.sin(angleRad) * (radius + 8.dp.toPx()).toFloat())
+                    (center.x + Math.cos(angleRad).toFloat() * (radius + 8.dp.toPx()).toFloat()),
+                    (center.y + Math.sin(angleRad).toFloat() * (radius + 8.dp.toPx()).toFloat())
                 )
                 val p2 = Offset(
-                    (center.x + Math.cos(angleRad) * (radius - 2.dp.toPx()).toFloat()),
-                    (center.y + Math.sin(angleRad) * (radius - 2.dp.toPx()).toFloat())
+                    (center.x + Math.cos(angleRad).toFloat() * (radius - 2.dp.toPx()).toFloat()),
+                    (center.y + Math.sin(angleRad).toFloat() * (radius - 2.dp.toPx()).toFloat())
                 )
                 drawLine(
                     color = androidx.compose.ui.graphics.Color(tColor),
@@ -319,12 +319,12 @@ private fun DrawScope.drawGaugeDialScheme(
             else if (norm >= 0.6f) tColor = android.graphics.Color.parseColor("#FF9800")
 
             val p1 = Offset(
-                (center.x + Math.cos(angleRad) * (radius + 12.dp.toPx()).toFloat()),
-                (center.y + Math.sin(angleRad) * (radius + 12.dp.toPx()).toFloat())
+                (center.x + Math.cos(angleRad).toFloat() * (radius + 12.dp.toPx()).toFloat()),
+                (center.y + Math.sin(angleRad).toFloat() * (radius + 12.dp.toPx()).toFloat())
             )
             val p2 = Offset(
-                (center.x + Math.cos(angleRad) * (radius - 2.dp.toPx()).toFloat()),
-                (center.y + Math.sin(angleRad) * (radius - 2.dp.toPx()).toFloat())
+                (center.x + Math.cos(angleRad).toFloat() * (radius - 2.dp.toPx()).toFloat()),
+                (center.y + Math.sin(angleRad).toFloat() * (radius - 2.dp.toPx()).toFloat())
             )
             drawLine(
                 color = androidx.compose.ui.graphics.Color(tColor),
@@ -334,8 +334,8 @@ private fun DrawScope.drawGaugeDialScheme(
             )
 
             val textRadius = radius + 28.dp.toPx()
-            val tx = (center.x + Math.cos(angleRad) * textRadius)
-            val ty = (center.y + Math.sin(angleRad) * textRadius)
+            val tx = (center.x + Math.cos(angleRad).toFloat() * textRadius)
+            val ty = (center.y + Math.sin(angleRad).toFloat() * textRadius)
 
             paint.color = tColor
             var textStr = Math.round(tickVal).toString()
@@ -370,8 +370,8 @@ private fun DrawScope.drawGaugeDialScheme(
     val needleAngle = startAngle + (sweepAngle * normVal)
     val needleRad = Math.toRadians(needleAngle.toDouble()).toFloat()
     val needleEnd = Offset(
-        (center.x + Math.cos(needleRad) * (radius * 0.95f)).toFloat(),
-        (center.y + Math.sin(needleRad) * (radius * 0.95f)).toFloat()
+        (center.x + Math.cos(needleRad).toFloat() * (radius * 0.95f)).toFloat(),
+        (center.y + Math.sin(needleRad).toFloat() * (radius * 0.95f)).toFloat()
     )
     drawLine(
         color = androidx.compose.ui.graphics.Color.White,
@@ -411,7 +411,7 @@ private fun DrawScope.drawGaugeDialScheme(
         }
 
         var unitText = dispUnit
-        if (dispUnit.contains("RPM")).toFloat() {
+        if (dispUnit.contains("RPM")) {
             unitText = "RPM (x1000)"
         }
 
