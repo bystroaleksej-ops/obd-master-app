@@ -76,7 +76,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp)).toFloat()
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Горизонтальный выбор датчика (опрос строго выбранного датчика)
         LazyRow(
@@ -101,7 +101,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp)).toFloat()
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Переключатель 4 графических стилей
         
@@ -135,7 +135,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                         color = TextMuted,
                         fontFamily = FontFamily.Monospace
                     )
-                    if (history.isNotEmpty()).toFloat() {
+                    if (history.isNotEmpty()) {
                         val min = history.minOrNull() ?: 0f
                         val max = history.maxOrNull() ?: 0f
                         Text(
@@ -149,7 +149,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp)).toFloat()
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Холст отрисовки выбранной схемы
         Card(
@@ -175,7 +175,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                     val minLimit = dispMin
                     val maxLimit = if (dispMax > dispMin) dispMax else dispMin + 1f
 
-                    Canvas(modifier = Modifier.fillMaxSize()).toFloat() {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
                         
                     val sensorSet = settings.sensorGaugeSettings[selectedPid.pidHex]
                     val drawMin = sensorSet?.minVal ?: dispMin
@@ -188,10 +188,10 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                 if (showSettings) {
                     val sensorSet = settings.sensorGaugeSettings[selectedPid.pidHex]
                     var minVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.minVal ?: dispMin) }
-                    var maxVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.maxVal ?: (if (dispMax > dispMin) dispMax else dispMin + 100f)).toFloat() }
-                    var stepVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.stepVal ?: ((maxVal - minVal) / 10f).coerceAtLeast(1f)).toFloat() }
+                    var maxVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.maxVal ?: (if (dispMax > dispMin) dispMax else dispMin + 100f)) }
+                    var stepVal by remember(selectedPid.pidHex, showSettings) { mutableStateOf(sensorSet?.stepVal ?: ((maxVal - minVal) / 10f).coerceAtLeast(1f)) }
 
-                    Column(modifier = Modifier.fillMaxWidth().background(DarkCard).padding(16.dp)).toFloat() {
+                    Column(modifier = Modifier.fillMaxWidth().background(DarkCard).padding(16.dp)) {
                         Text(text = "Диапазон:  - ", color = TextPrimary, fontSize = 14.sp)
                         RangeSlider(
                             value = minVal..maxVal,
@@ -203,13 +203,13 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                                 }
                                 val newMap = settings.sensorGaugeSettings.toMutableMap()
                                 newMap[selectedPid.pidHex] = com.obdmaster.app.data.SensorGaugeSettings(minVal, maxVal, stepVal)
-                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap)).toFloat()
+                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap))
                             },
                             valueRange = dispMin..(if (dispMax > dispMin) dispMax * 2f else 10000f),
                             steps = 100,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Spacer(modifier = Modifier.height(8.dp)).toFloat()
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(text = "Шаг делений: ", color = TextPrimary, fontSize = 14.sp)
                         Slider(
                             value = stepVal,
@@ -217,7 +217,7 @@ fun LiveChartsScreen(viewModel: ObdViewModel) {
                                 stepVal = it
                                 val newMap = settings.sensorGaugeSettings.toMutableMap()
                                 newMap[selectedPid.pidHex] = com.obdmaster.app.data.SensorGaugeSettings(minVal, maxVal, stepVal)
-                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap)).toFloat()
+                                viewModel.updateSettings(settings.copy(sensorGaugeSettings = newMap))
                             },
                             valueRange = 1f..(maxVal - minVal).coerceAtLeast(10f),
                             steps = 100,
@@ -278,7 +278,7 @@ private fun DrawScope.drawGaugeDialScheme(
             val subTicksPerSegment = 5
             for (i in 0..numTicks * subTicksPerSegment) {
                 if (i % subTicksPerSegment == 0) continue
-                val tickVal = minVal + (i * (safeStep / subTicksPerSegment)).toFloat()
+                val tickVal = minVal + (i * (safeStep / subTicksPerSegment))
                 val norm = (tickVal - minVal) / totalRange
                 if (norm > 1f) continue
 
@@ -352,7 +352,7 @@ private fun DrawScope.drawGaugeDialScheme(
     if (normVal > 0f) {
         val sweep = sweepAngle * normVal
         val brush = androidx.compose.ui.graphics.Brush.linearGradient(
-            colors = listOf(CyanAccent, androidx.compose.ui.graphics.Color(0xFFFF9800), androidx.compose.ui.graphics.Color(0xFFFF4C4C)).toFloat(),
+            colors = listOf(CyanAccent, androidx.compose.ui.graphics.Color(0xFFFF9800), androidx.compose.ui.graphics.Color(0xFFFF4C4C)),
             start = Offset(0f, 0f),
             end = Offset(size.width, 0f)
         )
@@ -400,7 +400,7 @@ private fun DrawScope.drawGaugeDialScheme(
             textAlign = android.graphics.Paint.Align.CENTER
             color = android.graphics.Color.WHITE
             isAntiAlias = true
-            setShadowLayer(10f, 0f, 0f, android.graphics.Color.argb(100, 255, 255, 255)).toFloat()
+            setShadowLayer(10f, 0f, 0f, android.graphics.Color.argb(100, 255, 255, 255))
         }
         val paintUnit = android.graphics.Paint().apply {
             textSize = 16.sp.toPx()
